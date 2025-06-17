@@ -1,22 +1,60 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Image, Dimensions, TouchableOpacity, Platform } from 'react-native';
-import Swiper from 'react-native-deck-swiper';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Image, Dimensions, TouchableOpacity, Platform, ActivityIndicator } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  runOnJS,
+  interpolate,
+  Extrapolate,
+  useDerivedValue
+} from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import FavoritesService from '../services/FavoritesService';
 import apiClient from '../services/apiClient'; // Adjust the import path as necessary
 
 const { width, height } = Dimensions.get('window');
+const SWIPE_THRESHOLD = width * 0.25;
+const CARD_WIDTH = width * 0.9;
+const CARD_HEIGHT = height * 0.7;
 
 const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [favoritedPets, setFavoritedPets] = useState(new Set());
   const [swipeLoading, setSwipeLoading] = useState(false);
+  const [preloadedImages, setPreloadedImages] = useState(new Map());
+  const [isPreloading, setIsPreloading] = useState(false);
 
+  // Constants for preloading
+  const CARDS_TO_PRELOAD = 5;
+  const CARDS_TO_SHOW_BEHIND = 3;
+
+  // Animated values for gestures
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const scale = useSharedValue(1);
+  const rotate = useSharedValue(0);
   // Load favorited pets when component mounts or pets change
   useEffect(() => {
     loadFavoritedPets();
+    preloadImages();
   }, [pets]);
+
+  // Preload images when currentCardIndex changes
+  useEffect(() => {
+    preloadImages();
+  }, [currentCardIndex]);
+
+  // Reset animation values when card changes
+  useEffect(() => {
+    translateX.value = 0;
+    translateY.value = 0;
+    scale.value = 1;
+    rotate.value = 0;
+  }, [currentCardIndex]);
 
   const loadFavoritedPets = async () => {
     try {
@@ -26,44 +64,120 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
       console.error('Error loading favorited pets:', error);
     }
   };
+  // Preload images for next cards
+  const preloadImages = async () => {
+    if (isPreloading || pets.length === 0) return;
+
+    setIsPreloading(true);
+    const newPreloadedImages = new Map();
+
+    try {
+      // Clean up old images that are no longer needed
+      const currentImageKeys = new Set();
+
+      // Preload current card and next CARDS_TO_PRELOAD cards
+      const startIndex = Math.max(0, currentCardIndex - 1); // Keep one previous card
+      const endIndex = Math.min(currentCardIndex + CARDS_TO_PRELOAD, pets.length);
+
+      for (let i = startIndex; i < endIndex; i++) {
+        const pet = pets[i];
+        if (!pet || !pet.images || pet.images.length === 0) continue;
+
+        // Preload all images for this pet
+        for (const imageData of pet.images) {
+          const imageKey = `${pet.id}-${imageData.id}`;
+          currentImageKeys.add(imageKey);
+
+          // Keep existing preloaded image if available
+          if (preloadedImages.has(imageKey)) {
+            newPreloadedImages.set(imageKey, preloadedImages.get(imageKey));
+          } else {
+            const imageUri = `http://192.168.0.139:8080/api/pets/images/${imageData.id}`;
+
+            newPreloadedImages.set(imageKey, {
+              uri: imageUri,
+              loaded: false
+            });
+
+            // Use React Native's Image.prefetch to preload the image
+            Image.prefetch(imageUri)
+              .then(() => {
+                if (newPreloadedImages.has(imageKey)) {
+                  newPreloadedImages.set(imageKey, {
+                    uri: imageUri,
+                    loaded: true
+                  });
+                  setPreloadedImages(new Map(newPreloadedImages));
+                }
+              })
+              .catch((error) => {
+                console.warn(`Failed to prefetch image ${imageKey}:`, error);
+              });
+          }
+        }
+      }
+
+      setPreloadedImages(newPreloadedImages);
+    } catch (error) {
+      console.error('Error preloading images:', error);
+    } finally {
+      setIsPreloading(false);
+    }
+  };// Get preloaded image URI or fallback
+  const getImageSource = (pet, imageIndex = 0) => {
+    if (!pet.images || pet.images.length === 0) {
+      return require('../assets/pet1.jpg');
+    }
+
+    const imageData = pet.images[imageIndex];
+    const imageKey = `${pet.id}-${imageData.id}`;
+    const preloadedImage = preloadedImages.get(imageKey);
+
+    if (preloadedImage) {
+      return { uri: preloadedImage.uri };
+    }
+
+    // Fallback to direct URI if not preloaded
+    return { uri: `http://192.168.0.139:8080/api/pets/images/${imageData.id}` };
+  };
 
   // Function to handle image cycling within a card
   const cycleImages = (pet, direction) => {
     if (!pet.images || pet.images.length <= 1) return;
-    
+
     if (direction === 'next') {
-      setCurrentImageIndex((prev) => 
+      setCurrentImageIndex((prev) =>
         prev === pet.images.length - 1 ? 0 : prev + 1
       );
     } else {
-      setCurrentImageIndex((prev) => 
+      setCurrentImageIndex((prev) =>
         prev === 0 ? pet.images.length - 1 : prev - 1
       );
     }
   };
-  // Reset image index when the card changes
-  const handleSwiped = (cardIndex) => {
-    setCurrentCardIndex(cardIndex + 1);
+
+  // Handle card swiped
+  const handleCardSwiped = (direction) => {
+    const pet = pets[currentCardIndex];
+    if (!pet) return;
+
+    if (direction === 'left') {
+      console.log('Swiped left (rejected) pet:', pet.name);
+      if (onSwipeLeft) onSwipeLeft(pet);
+    } else if (direction === 'right') {
+      console.log('Swiped right (liked) pet:', pet.name);
+      handleSwipeRight(pet);
+    }
+
+    // Move to next card
+    setCurrentCardIndex(prev => prev + 1);
     setCurrentImageIndex(0);
-    setSwipeLoading(false);
   };
 
   // Enhanced swipe handlers with AsyncStorage integration
-  const handleSwipeLeft = async (cardIndex) => {
-    const pet = pets[cardIndex];
-    console.log('Swiped left (rejected) pet:', pet.name);
-    handleSwiped(cardIndex);
-    if (onSwipeLeft) {
-      onSwipeLeft(pet);
-    }
-  };
-
-  const handleSwipeRight = async (cardIndex) => {
-    const pet = pets[cardIndex];
+  const handleSwipeRight = async (pet) => {
     setSwipeLoading(true);
-    
-    console.log('Swiped right (liked) pet:', pet.name);
-    
+
     try {
       // Add to favorites using AsyncStorage
       const success = await FavoritesService.addFavorite(pet.id);
@@ -76,217 +190,303 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
       }
     } catch (error) {
       console.error('Error adding pet to favorites:', error);
+    } finally {
+      setSwipeLoading(false);
     }
-    
-    handleSwiped(cardIndex);
+
     if (onSwipeRight) {
       onSwipeRight(pet);
     }
   };
-  const renderCard = (pet) => {
-    if (!pet) return null;
-    
-    const isFavorited = favoritedPets.has(String(pet.id));
-    
-    // Configure API URL based on platform and environment
-    const getApiUrl = () => {
-      if (__DEV__) {
-        // Development environment
-        if (Platform.OS === 'android') {
-          // Android emulator uses 10.0.2.2 to access host machine's localhost
-          return 'http://192.168.0.139:8080/api/pets/images/';
-        } else {
-          // iOS simulator can use localhost
-          return 'http://localhost:8080/api/pets/images/';
-        }
+
+  // Programmatic swipe functions
+  const swipeLeft = () => {
+    translateX.value = withSpring(-width * 1.5, { damping: 15 }, () => {
+      runOnJS(handleCardSwiped)('left');
+      translateX.value = 0;
+    });
+  };
+
+  const swipeRight = () => {
+    translateX.value = withSpring(width * 1.5, { damping: 15 }, () => {
+      runOnJS(handleCardSwiped)('right');
+      translateX.value = 0;
+    });
+  };
+
+  // Pan gesture
+  const panGesture = Gesture.Pan()
+    .onUpdate((event) => {
+      translateX.value = event.translationX;
+      translateY.value = event.translationY;
+
+      // Calculate rotation based on horizontal movement
+      rotate.value = interpolate(
+        event.translationX,
+        [-width / 2, 0, width / 2],
+        [-10, 0, 10],
+        Extrapolate.CLAMP
+      );
+
+      // Slightly scale down when dragging
+      scale.value = interpolate(
+        Math.abs(event.translationX),
+        [0, width / 2],
+        [1, 0.95],
+        Extrapolate.CLAMP
+      );
+    })
+    .onEnd((event) => {
+      const shouldSwipeLeft = event.translationX < -SWIPE_THRESHOLD;
+      const shouldSwipeRight = event.translationX > SWIPE_THRESHOLD;
+
+      if (shouldSwipeLeft) {
+        translateX.value = withSpring(-width * 1.5, { damping: 15 }, () => {
+          runOnJS(handleCardSwiped)('left');
+          translateX.value = 0;
+          translateY.value = 0;
+          rotate.value = 0;
+          scale.value = 1;
+        });
+      } else if (shouldSwipeRight) {
+        translateX.value = withSpring(width * 1.5, { damping: 15 }, () => {
+          runOnJS(handleCardSwiped)('right');
+          translateX.value = 0;
+          translateY.value = 0;
+          rotate.value = 0;
+          scale.value = 1;
+        });
+      } else {
+        // Return to center
+        translateX.value = withSpring(0);
+        translateY.value = withSpring(0);
+        rotate.value = withSpring(0);
+        scale.value = withSpring(1);
       }
-      // Production environment - replace with your actual API URL
-      return 'https://your-production-api.com/api/pets/images/';
+    });
+
+  // Animated style for the current card
+  const animatedCardStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { translateX: translateX.value },
+        { translateY: translateY.value },
+        { rotate: `${rotate.value}deg` },
+        { scale: scale.value },
+      ],
     };
-    
-    const API_URL = getApiUrl();
-    const cardImage = pet.images && pet.images.length > 0
-      ? { uri: `http://192.168.0.139:8080/api/pets/images/${pet.images[currentImageIndex].id}` }
-      : require('../assets/pet1.jpg'); // Fallback image
+  });
 
-    return (
-      <TouchableOpacity 
+  // Opacity for overlay labels
+  const leftOverlayStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      translateX.value,
+      [-SWIPE_THRESHOLD, -50, 0],
+      [1, 0.6, 0],
+      Extrapolate.CLAMP
+    );
+    return { opacity };
+  });
+
+  const rightOverlayStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      translateX.value,
+      [0, 50, SWIPE_THRESHOLD],
+      [0, 0.6, 1],
+      Extrapolate.CLAMP
+    );
+    return { opacity };
+  }); const renderCard = (pet, index, isBackground = false) => {
+    if (!pet) return null;
+
+    const isFavorited = favoritedPets.has(String(pet.id));
+    const cardImageIndex = isBackground ? 0 : currentImageIndex;
+    const cardImage = getImageSource(pet, cardImageIndex);
+
+    const CardComponent = isBackground ? View : Animated.View;
+    const cardStyle = isBackground
+      ? [styles.card, styles.backgroundCard]
+      : [styles.card, animatedCardStyle];
+
+    const content = (
+      <TouchableOpacity
         activeOpacity={0.9}
-        onPress={() => onCardPress(pet)}
-        style={styles.card}
-      >
+        onPress={() => !isBackground && onCardPress(pet)}
+        style={styles.cardTouchable}
+        disabled={isBackground}>
         <View style={styles.imageContainer}>
-          <Image source={cardImage} style={styles.cardImage} />
-
-          {/* Favorite indicator */}
-          {isFavorited && (
-            <View style={styles.favoriteIndicator}>
-              <Ionicons name="heart" size={20} color="#FF4949" />
-            </View>
+          <Image
+            source={cardImage}
+            style={styles.cardImage}
+            defaultSource={require('../assets/pet1.jpg')}
+            fadeDuration={isBackground ? 0 : 300} />
+          {!isBackground && (
+            <>
+              {/* Swipe Overlays */}
+              <Animated.View style={[styles.swipeOverlay, styles.rejectOverlay, leftOverlayStyle]}>
+                <Text style={styles.swipeText}>NOPE</Text>
+              </Animated.View>
+              <Animated.View style={[styles.swipeOverlay, styles.likeOverlay, rightOverlayStyle]}>
+                <Text style={styles.swipeText}>
+                  {swipeLoading ? 'SAVING...' : 'LIKE'}
+                </Text>
+              </Animated.View>
+              {isFavorited && (
+                <View style={styles.favoriteIndicator}>
+                  <Ionicons name="heart" size={20} color="#FF4949" />
+                </View>
+              )} 
+              {pet.images && pet.images.length > 1 && (
+                <View style={styles.imageNavigationContainer}>
+                  <TouchableOpacity
+                    onPress={() => cycleImages(pet, 'prev')}
+                    style={[styles.imageNavButton, styles.leftButton]}>
+                    <Ionicons name="chevron-back" size={28} color="white" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => cycleImages(pet, 'next')}
+                    style={[styles.imageNavButton, styles.rightButton]}>
+                    <Ionicons name="chevron-forward" size={28} color="white" />
+                  </TouchableOpacity>
+                </View>
+              )}              <View style={styles.imageCounter}>
+                {pet.images && pet.images.length > 1 && pet.images.map((_, imageIndex) => (
+                  <View
+                    key={imageIndex}
+                    style={[
+                      styles.dot,
+                      currentImageIndex === imageIndex && styles.activeDot
+                    ]}
+                  />
+                ))}
+              </View>
+            </>
           )}
-
-          {pet.images && pet.images.length > 1 && (
-            <View style={styles.imageNavigationContainer}>
-              <TouchableOpacity 
-                onPress={() => cycleImages(pet, 'prev')}
-                style={[styles.imageNavButton, styles.leftButton]}
-              >
-                <Ionicons name="chevron-back" size={28} color="white" />
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                onPress={() => cycleImages(pet, 'next')}
-                style={[styles.imageNavButton, styles.rightButton]}
-              >
-                <Ionicons name="chevron-forward" size={28} color="white" />
-              </TouchableOpacity>
-            </View>
-          )}
-
-          <View style={styles.imageCounter}>
-            {pet.images && pet.images.length > 1 && pet.images.map((_, index) => (
-              <View 
-                key={index} 
-                style={[
-                  styles.dot, 
-                  currentImageIndex === index && styles.activeDot
-                ]} 
-              />
-            ))}
-          </View>
         </View>
 
-        <View style={styles.cardContent}>
-          <View style={styles.header}>
-            <Text style={styles.name}>{pet.name}</Text>
+        <View style={styles.cardContent}>          <View style={styles.header}>
+          <Text style={styles.name}>{pet.name}</Text>
+          {!isBackground && (
             <View style={styles.ageBreedRow}>
               <Text style={styles.age}>
                 {pet.birthDate ? calculateAge(pet.birthDate) : 'Age unknown'}
               </Text>
-              <Text style={styles.dot}>•</Text>
+              <Text style={styles.dotText}>•</Text>
               <Text style={styles.breed}>{pet.breed || 'Unknown breed'}</Text>
             </View>
-          </View>
+          )}
+        </View>          {!isBackground && (
+          <>
+            <View style={styles.locationContainer}>
+              <Ionicons name="location" size={16} color="#666" />
+              <Text style={styles.location}>
+                {pet.location?.city || 'Unknown location'}
+              </Text>
+            </View>
 
-          <View style={styles.locationContainer}>
-            <Ionicons name="location" size={16} color="#666" />
-            <Text style={styles.location}>
-              {pet.location?.city || 'Unknown location'}
-            </Text>
-          </View>
-
-          <View style={styles.tags}>
-            {pet.vaccinated && (
-              <View style={styles.tag}>
-                <Text style={styles.tagText}>Vaccinated</Text>
-              </View>
-            )}
-            {pet.neutered && (
-              <View style={styles.tag}>
-                <Text style={styles.tagText}>Neutered</Text>
-              </View>
-            )}
-            {pet.specialNeeds && (
-              <View style={[styles.tag, styles.specialNeedsTag]}>
-                <Text style={styles.tagText}>Special Needs</Text>
-              </View>
-            )}
-          </View>
+            <View style={styles.tags}>
+              {pet.vaccinated && (
+                <View style={styles.tag}>
+                  <Text style={styles.tagText}>Vaccinated</Text>
+                </View>
+              )}
+              {pet.neutered && (
+                <View style={styles.tag}>
+                  <Text style={styles.tagText}>Neutered</Text>
+                </View>
+              )}
+              {pet.specialNeeds && (
+                <View style={[styles.tag, styles.specialNeedsTag]}>
+                  <Text style={styles.tagText}>Special Needs</Text>
+                </View>
+              )}
+            </View>
+          </>
+        )}
         </View>
       </TouchableOpacity>
     );
-  };
 
-  return (
+    if (isBackground) {
+      return (
+        <View key={`background-${pet.id}-${index}`} style={cardStyle}>
+          {content}
+        </View>
+      );
+    }
+
+    return (
+      <GestureDetector gesture={panGesture} key={`current-${pet.id}-${index}`}>
+        <CardComponent style={cardStyle}>
+          {content}
+        </CardComponent>
+      </GestureDetector>
+    );
+  }; return (
     <View style={styles.container}>
-      {pets.length > 0 ? (        <Swiper
-          cards={pets}
-          renderCard={renderCard}
-          onSwiped={handleSwiped}
-          onSwipedLeft={handleSwipeLeft}
-          onSwipedRight={handleSwipeRight}
-          cardIndex={0}
-          backgroundColor={'#F5F8FF'}
-          stackSize={2}
-          stackSeparation={14}
-          animateCardOpacity
-          verticalSwipe={false}
-          cardVerticalMargin={0}
-          cardHorizontalMargin={0}
-          containerStyle={styles.swiperContainer}
-          overlayLabels={{
-            left: {
-              title: 'NOPE',
-              style: {
-                label: {
-                  backgroundColor: '#FF4949',
-                  color: 'white',
-                  fontSize: 24,
-                  borderRadius: 10,
-                  padding: 10,
-                },
-                wrapper: {
-                  flexDirection: 'column',
-                  alignItems: 'flex-end',
-                  justifyContent: 'flex-start',
-                  marginTop: 30,
-                  marginLeft: -30,
-                }
-              }
-            },
-            right: {
-              title: swipeLoading ? 'SAVING...' : 'LIKE',
-              style: {
-                label: {
-                  backgroundColor: swipeLoading ? '#FFA726' : '#4CCC93',
-                  color: 'white',
-                  fontSize: 24,
-                  borderRadius: 10,
-                  padding: 10,
-                },
-                wrapper: {
-                  flexDirection: 'column',
-                  alignItems: 'flex-start',
-                  justifyContent: 'flex-start',
-                  marginTop: 30,
-                  marginLeft: 30,
-                }
-              }
-            }
-          }}
-        />
-      ) : (
-        <View style={styles.emptyContainer}>
-          <Ionicons name="paw" size={70} color="#CCCCCC" />
-          <Text style={styles.emptyText}>No pets found</Text>
-          <Text style={styles.emptySubtext}>Try changing your search criteria</Text>
-        </View>
-      )}
+      <View style={styles.cardContainer}>
+        {pets.length > 0 ? (
+          <>            {/* Stack effect - show background cards with proper preloading */}
+            {pets
+              .slice(currentCardIndex + 1, currentCardIndex + 1 + CARDS_TO_SHOW_BEHIND)
+              .map((pet, index) => {
+                const backgroundCardStyle = {
+                  transform: [
+                    { scale: 1 - (index + 1) * 0.03 },
+                    { translateY: (index + 1) * 8 }
+                  ],
+                  zIndex: -(index + 1),
+                  opacity: 1 - (index * 0.2)
+                };
 
-      {pets.length > 0 && (
-        <View style={styles.buttonsContainer}>
-          <TouchableOpacity 
-            style={[styles.button, styles.nopeButton]}
-            onPress={() => {
-              if (currentCardIndex < pets.length) {
-                swiper?.swipeLeft();
-              }
-            }}
-          >
-            <Ionicons name="close" size={30} color="#FF4949" />
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.button, styles.likeButton]}
-            onPress={() => {
-              if (currentCardIndex < pets.length) {
-                swiper?.swipeRight();
-              }
-            }}
-          >
-            <Ionicons name="heart" size={30} color="#4CCC93" />
-          </TouchableOpacity>
-        </View>
-      )}
+                return (
+                  <View
+                    key={`background-${pet.id}-${currentCardIndex}-${index}`}
+                    style={[styles.card, styles.backgroundCard, backgroundCardStyle]}
+                  >                    <View style={styles.imageContainer}>
+                      <Image
+                        source={getImageSource(pet, 0)}
+                        style={styles.cardImage}
+                        defaultSource={require('../assets/pet1.jpg')}
+                        fadeDuration={100}
+                      />
+                    </View>
+                    <View style={styles.cardContent}>
+                      <View style={styles.header}>
+                        <Text style={styles.name}>{pet.name}</Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })
+            }            {/* Current card */}
+            {pets[currentCardIndex] && renderCard(pets[currentCardIndex], currentCardIndex, false)}
+
+            {/* Action buttons */}
+            {/* <View style={styles.buttonsContainer}>
+              <TouchableOpacity 
+                style={[styles.button, styles.nopeButton]}
+                onPress={swipeLeft}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="close" size={30} color="#FF4949" />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.button, styles.likeButton]}
+                onPress={swipeRight}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="heart" size={30} color="#4CCC93" />
+              </TouchableOpacity>
+            </View> */}
+          </>
+        ) : (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="paw" size={70} color="#CCCCCC" />
+            <Text style={styles.emptyText}>No pets found</Text>
+            <Text style={styles.emptySubtext}>Try changing your search criteria</Text>
+          </View>)}
+      </View>
     </View>
   );
 };
@@ -295,19 +495,19 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
 const calculateAge = (birthDate) => {
   const today = new Date();
   const birth = new Date(birthDate);
-  
+
   let years = today.getFullYear() - birth.getFullYear();
   const months = today.getMonth() - birth.getMonth();
-  
+
   if (months < 0 || (months === 0 && today.getDate() < birth.getDate())) {
     years--;
   }
-  
+
   if (years === 0) {
     const monthsDiff = (today.getMonth() + 12) - birth.getMonth();
     return `${monthsDiff} months`;
   }
-  
+
   return `${years} ${years === 1 ? 'year' : 'years'}`;
 };
 
@@ -316,11 +516,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F8FF',
   },
-  swiperContainer: {
+  cardContainer: {
     flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
   },
   card: {
-    height: height * 0.7,
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
     borderRadius: 20,
     backgroundColor: 'white',
     shadowColor: '#000',
@@ -332,16 +536,67 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 5,
     overflow: 'hidden',
+    position: 'absolute',
+  }, backgroundCard: {
+    opacity: 0.9,
+  },
+  cardTouchable: {
+    flex: 1,
   },
   imageContainer: {
     height: '65%',
     width: '100%',
     position: 'relative',
-  },
-  cardImage: {
+  }, cardImage: {
     width: '100%',
     height: '100%',
     resizeMode: 'cover',
+  },
+  imageLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  swipeOverlay: {
+    position: 'absolute',
+    top: 50,
+    borderRadius: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    zIndex: 10,
+  },
+  rejectOverlay: {
+    right: 30,
+    backgroundColor: '#FF4949',
+    borderWidth: 3,
+    borderColor: '#FF4949',
+  },
+  likeOverlay: {
+    left: 30,
+    backgroundColor: '#4CCC93',
+    borderWidth: 3,
+    borderColor: '#4CCC93',
+  },
+  swipeText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+    textAlign: 'center',
+  },
+  favoriteIndicator: {
+    position: 'absolute',
+    top: 15,
+    right: 15,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 20,
+    padding: 8,
+    zIndex: 5,
   },
   imageNavigationContainer: {
     position: 'absolute',
@@ -352,6 +607,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 10,
   },
   imageNavButton: {
     width: 40,
@@ -409,7 +665,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
   },
-  dot: {
+  dotText: {
     fontSize: 16,
     color: '#666',
     marginHorizontal: 6,
@@ -451,7 +707,11 @@ const styles = StyleSheet.create({
   buttonsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-evenly',
-    padding: 15,
+    position: 'absolute',
+    bottom: 30,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 60,
   },
   button: {
     width: 60,
@@ -463,11 +723,11 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 1,
+      height: 2,
     },
     shadowOpacity: 0.2,
-    shadowRadius: 1.41,
-    elevation: 2,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   likeButton: {
     borderWidth: 2,
