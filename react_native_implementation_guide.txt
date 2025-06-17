@@ -1,0 +1,293 @@
+# PetFinder React Native Implementation Guide
+
+This document provides comprehensive information for implementing a React Native mobile application that interacts with the PetFinder API backend. The backend is built with Spring Boot and provides endpoints for managing pets, users, and authentication.
+
+## 1. System Overview
+
+PetFinder is a platform that connects people looking to adopt pets with individuals, organizations, and shelters who have pets available for adoption. The system allows:
+- User registration and authentication
+- Listing pets available for adoption
+- Filtering pets by various criteria (type, location, etc.)
+- Managing pet profiles with multiple images
+- Managing user profiles (pet owners/shelters)
+
+## 2. API Endpoints
+
+### 2.1. Authentication API
+
+Base path: `/api/v1/auth`
+
+| Endpoint | Method | Request Body | Response | Description |
+|----------|--------|--------------|----------|-------------|
+| `/register` | POST | RegisterRequest (username, password, email, fullName) | AuthenticationResponse (accessToken, refreshToken) | Register a new user |
+| `/login` | POST | AuthenticationRequest (username, password) | AuthenticationResponse (accessToken, refreshToken) | Authenticate user |
+| `/refresh-token` | POST | TokenRefreshRequest | AuthenticationResponse (accessToken, refreshToken) | Refresh JWT token |
+
+### 2.2. Pets API
+
+Base path: `/api/pets`
+
+| Endpoint | Method | Description | Request | Response |
+|----------|--------|-------------|---------|----------|
+| `/` | GET | Get all pets | - | List<PetResponseDTO> |
+| `/{id}` | GET | Get pet by ID | - | Pet |
+| `/type/{type}` | GET | Get pets by type (DOG/CAT) | - | List<Pet> |
+| `/status/{status}` | GET | Get pets by adoption status | - | List<Pet> |
+| `/user/{userId}` | GET | Get pets by user ID | - | List<Pet> |
+| `/city/{city}` | GET | Get pets by city | - | List<Pet> |
+| `/` | POST | Create a new pet | Pet | Pet |
+| `/{id}` | PUT | Update a pet | Pet | Pet |
+| `/{id}` | DELETE | Delete a pet | - | No content |
+
+### 2.3. Pet Images API
+
+Base path: `/api/pets`
+
+| Endpoint | Method | Description | Request | Response |
+|----------|--------|-------------|---------|----------|
+| `/{petId}/images` | POST | Upload pet images | MultipartFile[] | Message with image count |
+| `/{petId}/images` | GET | Get pet images | - | List<PetImage> |
+| `/images/{imageId}` | GET | Get image by ID | - | Image binary |
+| `/images/{imageId}` | DELETE | Delete pet image | - | Success message |
+
+### 2.4. Users API
+
+Base path: `/api/users`
+
+| Endpoint | Method | Description | Request | Response |
+|----------|--------|-------------|---------|----------|
+| `/` | GET | Get all users | - | List<User> |
+| `/{id}` | GET | Get user by ID | - | User |
+| `/email/{email}` | GET | Get user by email | - | User |
+| `/type/{type}` | GET | Get users by type | - | List<User> |
+| `/city/{city}` | GET | Get users by city | - | List<User> |
+| `/` | POST | Create a new user | User | User |
+| `/{id}` | PUT | Update a user | User | User |
+| `/{id}` | DELETE | Delete a user | - | No content |
+
+## 3. Data Models
+
+### 3.1. User
+
+- id: Long
+- username: String (unique)
+- password: String
+- email: String (unique)
+- fullName: String
+- phone: String
+- description: String
+- type: UserType (INDIVIDUAL, ORGANIZATION, SHELTER)
+- location: Location
+- role: Role (USER or ADMIN)
+- pets: List<Pet>
+- createdAt: Date
+
+### 3.2. Pet
+
+- id: Long
+- name: String
+- type: PetType (DOG or CAT)
+- breed: String
+- description: String
+- birthDate: Date
+- gender: Gender (MALE, FEMALE, UNKNOWN)
+- size: String
+- weight: Double
+- color: String
+- vaccinated: Boolean
+- neutered: Boolean
+- specialNeeds: Boolean
+- specialNeedsDescription: String
+- status: AdoptionStatus (AVAILABLE, PENDING, ADOPTED)
+- user: User
+- location: Location
+- images: List<PetImage>
+- createdAt: Date
+
+### 3.3. PetImage
+
+- id: Long
+- fileName: String
+- fileType: String
+- data: byte[]
+- petId: Long
+
+### 3.4. Location
+
+- id: Long
+- address: String
+- city: String
+- state: String
+- zipCode: String
+- country: String
+- latitude: Double
+- longitude: Double
+
+## 4. Authentication Flow
+
+1. User registers with username, password, email, fullName
+2. Backend returns JWT access token and refresh token
+3. Frontend stores tokens securely
+4. Access token is included in all API requests in Authorization header
+5. When access token expires, use refresh token to get new tokens
+6. Logout by clearing tokens from frontend storage
+
+## 5. React Native Implementation Guidelines
+
+### 5.1. Project Setup
+
+```
+npx react-native init PetFinderApp
+cd PetFinderApp
+npm install @react-navigation/native @react-navigation/stack @react-navigation/bottom-tabs
+npm install @react-native-async-storage/async-storage axios
+npm install react-native-image-picker react-native-maps
+npm install react-native-vector-icons react-native-elements
+```
+
+### 5.2. Key Screens to Implement
+
+1. **Authentication Screens**
+   - Login Screen
+   - Registration Screen
+   - Password Recovery Screen
+
+2. **Pet Screens**
+   - Pet Listing Screen (with filters)
+   - Pet Details Screen
+   - Add/Edit Pet Screen
+   - Pet Image Upload Screen
+
+3. **User Screens**
+   - User Profile Screen
+   - User Listing Screen (for organizations/shelters)
+   - Add/Edit User Screen
+
+4. **Profile Screens**
+   - User Profile
+   - Settings
+
+### 5.3. Authentication Service
+
+Create an authentication service that handles:
+- User registration
+- Login
+- Token management (storing, retrieving, refreshing)
+- Logout
+
+### 5.4. API Services
+
+Create separate API services for:
+- PetsService - for all pet-related API calls
+- UsersService - for all user-related API calls
+- ImagesService - for handling image uploads and retrieval
+
+### 5.5. State Management
+
+Use React Context or Redux for global state management:
+- Auth state (logged in user, tokens)
+- Pets state (listings, filters)
+- Users state
+
+### 5.6. Image Handling
+
+- Use react-native-image-picker for capturing/selecting images
+- Implement a component for displaying pet images with carousel functionality
+- When uploading images, use FormData to send multipart/form-data requests
+
+### 5.7. Location Services
+
+- Implement location services using react-native-maps
+- Allow users to select location when creating pets or user profiles
+- Display pet locations on a map
+
+### 5.8. Error Handling
+
+- Implement global error handling for API requests
+- Show appropriate error messages to users
+- Handle network connectivity issues
+
+### 5.9. Navigation Flow
+
+1. Unauthenticated users:
+   - Login/Register screens only
+
+2. Authenticated users:
+   - Tab navigation:
+     - Home/Pet Listing
+     - Search/Filter
+     - Add Pet (if user has appropriate role)
+     - Favorites
+     - Profile
+
+## 6. Important Features to Implement
+
+1. **Pet Filtering and Search**
+   - Filter by pet type (dog/cat)
+   - Filter by adoption status
+   - Search by location
+   - Additional filters (age, size, etc.)
+
+2. **Image Gallery**
+   - Display multiple pet images in a gallery view
+   - Allow users to swipe through images
+
+3. **Pet Adoption Process**
+   - Allow users to express interest in adopting a pet
+   - Messaging between potential adopters and pet owners/shelters
+
+4. **User Profiles**
+   - User can view and edit their profile
+   - User can register as an individual, organization, or shelter
+
+5. **Favorites and Saved Searches**
+   - Allow users to save favorite pets
+   - Save search criteria for later use
+
+6. **Notifications**
+   - Notify users about pet status changes
+   - Notify pet owners about adoption requests
+
+## 7. Security Considerations
+
+1. **Token Storage**
+   - Store authentication tokens securely using Async Storage
+   - Implement token expiration and refresh logic
+
+2. **Input Validation**
+   - Validate all user inputs before sending to the API
+
+3. **Image Upload Security**
+   - Validate image size and format before uploading
+   - Use secure connections for image uploads
+
+4. **API Calls**
+   - Use HTTPS for all API calls
+   - Include authentication headers for all protected endpoints
+
+## 8. API Integration Tips
+
+1. Create a base API service with Axios that:
+   - Sets base URL
+   - Handles token authentication
+   - Manages token refresh
+   - Provides global error handling
+
+2. Implement service classes for each entity type (Pets, Users, etc.)
+
+3. Use interceptors to automatically handle 401 errors and trigger token refresh
+
+## 9. Offline Support Considerations
+
+1. Cache pet listings for offline viewing
+2. Queue actions performed while offline for later synchronization
+3. Provide clear feedback when the app is operating offline
+
+## 10. Testing Guidelines
+
+1. Unit test all API service functions
+2. Implement UI testing for critical flows
+3. Test authentication flows thoroughly
+4. Test image upload and display functionality
+
+This guide provides a comprehensive overview of the PetFinder backend API and instructions for implementing a React Native frontend that connects to it. The React Native application should follow modern mobile application development practices and provide a smooth, intuitive user experience for people looking to adopt pets.
