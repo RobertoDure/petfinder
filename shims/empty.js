@@ -1,0 +1,2 @@
+// Empty shim
+export default {};
