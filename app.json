@@ -1,0 +1,58 @@
+{
+  "expo": {
+    "name": "PetFinder",
+    "slug": "petfinder-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./src/assets/petfinder-logo.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./src/assets/petfinder-logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSExceptionDomains": {
+            "localhost": {
+              "NSExceptionAllowsInsecureHTTPLoads": true,
+              "NSExceptionMinimumTLSVersion": "1.0",
+              "NSExceptionRequiresForwardSecrecy": false,
+              "NSIncludesSubdomains": true
+            },
+            "192.168.0.139": {
+              "NSExceptionAllowsInsecureHTTPLoads": true,
+              "NSExceptionMinimumTLSVersion": "1.0",
+              "NSExceptionRequiresForwardSecrecy": false,
+              "NSIncludesSubdomains": true
+            }
+          }
+        }
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./src/assets/petfinder-logo.png",
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE", "ACCESS_MEDIA_LOCATION", 
+        "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "CAMERA_ROLL", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO"]
+    },
+    "web": {
+      "favicon": "./src/assets/petfinder-logo.png"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app needs access to your photos to let you add pet images."
+        }
+      ]
+    ]
+  }
+}

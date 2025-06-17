@@ -1,0 +1,59 @@
+{
+  "sizes": [
+    "Extra Small (XS)",
+    "Small (S)",
+    "Medium (M)",
+    "Large (L)",
+    "Extra Large (XL)",
+    "Giant (XXL)"
+  ],
+  "weightRanges": {
+    "DOG": [
+      "Under 5 kg",
+      "5-10 kg",
+      "10-20 kg",
+      "20-30 kg",
+      "30-40 kg",
+      "40-50 kg",
+      "Over 50 kg"
+    ],
+    "CAT": [
+      "Under 2 kg",
+      "2-3 kg",
+      "3-4 kg",
+      "4-5 kg",
+      "5-6 kg",
+      "6-7 kg",
+      "Over 7 kg"
+    ]
+  },
+  "colors": [
+    "Black",
+    "White",
+    "Brown",
+    "Golden",
+    "Cream",
+    "Gray",
+    "Silver",
+    "Red",
+    "Orange",
+    "Yellow",
+    "Tan",
+    "Chocolate",
+    "Blonde",
+    "Fawn",
+    "Brindle",
+    "Merle",
+    "Spotted",
+    "Calico",
+    "Tortoiseshell",
+    "Tabby",
+    "Tuxedo",
+    "Tricolor",
+    "Blue",
+    "Lilac",
+    "Sable",
+    "Mixed Colors",
+    "Other"
+  ]
+}
