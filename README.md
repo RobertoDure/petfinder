@@ -13,9 +13,9 @@ React Native + Expo mobile app that lets adopters swipe through pets, view rich 
 | --- | --- | --- |
 | ![Swipe like](./docs/like-screen.jpeg) | ![Swipe skip](./docs/deslike-screen.jpeg) | ![Pet detail](./docs/detail-screen.jpeg) |
 
-| Add pet | Profile |
-| --- | --- |
-| ![Add pet form](./docs/add-screen.jpeg) | ![Profile screen](./docs/profile-screen.jpeg) |
+List of Favorites | Add pet | Profile |
+| --- | --- | --- |
+| ![Favorites screen](./docs/favorites-screen.jpeg) | ![Add pet form](./docs/add-screen.jpeg) | ![Profile screen](./docs/profile-screen.jpeg) |
 
 ## What the app does
 
