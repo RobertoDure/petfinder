@@ -1,8 +1,13 @@
+
 # PetFinder App
 
 PetFinder is a mobile app that helps connect animals in shelters or foster homes with people who want to adopt, making the adoption process simpler, faster, and more transparent for everyone. It focuses on showing pets with rich, friendly profiles instead of cold listings, so each animal feels like a real companion, not just an ID number. For tutors and shelters, it offers an easy way to publish pets with photos and details, keep information updated, and follow up with interested adopters. For adopters, it brings a swipe-based experience that is fun to use but still serious about responsible adoption, including health, location, and contact information. The project is open-source, designed so other developers can learn from and extend a real-world React Native + backend stack. The goal is to lower the barrier for both adopters and organizations, helping more animals find safe, loving homes.
 
 React Native + Expo mobile app that lets adopters swipe through pets, view rich profiles, save favorites, and tutors post new pets with images. Authentication, search, messaging, notifications, and location support are built in.
+
+<p align="center">
+	<img src="./docs/petfinder-logo.png" alt="PetFinder logo" width="200" height="200" />
+</p>
 
 ## Visual overview
 
