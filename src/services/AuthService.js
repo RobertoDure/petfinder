@@ -13,22 +13,22 @@ const getApiUrl = () => {
       
       // You can manually switch between these options:
       // Option 1: Android Emulator
-      //return 'http://10.0.2.2:8080/api';
+      //return 'http://10.0.2.2:8080/api/v1/auth';
       
       // Option 2: Android Physical Device
-      return 'http://192.168.0.139:8080/api';
+      return 'http://192.168.0.139:8080/api/v1/auth';
       
     } else if (Platform.OS === 'ios') {
       // For iOS Physical Device (ALWAYS use IP address, never localhost)
       // iOS development builds cannot access localhost due to App Transport Security
-      return 'http://192.168.0.139:8080/api';
+      return 'http://192.168.0.139:8080/api/v1/auth';
       
       // Alternative: iOS Simulator (can use localhost, but IP is more reliable)
-      //return 'http://localhost:8080/api';
+      //return 'http://localhost:8080/api/v1/auth';
     }
   }
   // Production environment - replace with your actual API URL
-  return 'https://your-production-api.com/api';
+  return 'https://your-production-api.com/api/v1/auth';
 };
 
 const API_URL = getApiUrl();

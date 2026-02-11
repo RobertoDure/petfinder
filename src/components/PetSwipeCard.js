@@ -6,11 +6,11 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withTiming,
-  runOnJS,
   interpolate,
-  Extrapolate,
+  Extrapolation,
   useDerivedValue
 } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { Ionicons } from '@expo/vector-icons';
 import FavoritesService from '../services/FavoritesService';
 import apiClient from '../services/apiClient'; // Adjust the import path as necessary
@@ -96,10 +96,7 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
 
             newPreloadedImages.set(imageKey, {
               uri: imageUri,
-              loaded: false
-            });
-
-            // Use React Native's Image.prefetch to preload the image
+              loaded: false});
             Image.prefetch(imageUri)
               .then(() => {
                 if (newPreloadedImages.has(imageKey)) {
@@ -202,14 +199,14 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
   // Programmatic swipe functions
   const swipeLeft = () => {
     translateX.value = withSpring(-width * 1.5, { damping: 15 }, () => {
-      runOnJS(handleCardSwiped)('left');
+      scheduleOnRN(handleCardSwiped, 'left');
       translateX.value = 0;
     });
   };
 
   const swipeRight = () => {
     translateX.value = withSpring(width * 1.5, { damping: 15 }, () => {
-      runOnJS(handleCardSwiped)('right');
+      scheduleOnRN(handleCardSwiped, 'right');
       translateX.value = 0;
     });
   };
@@ -225,7 +222,7 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
         event.translationX,
         [-width / 2, 0, width / 2],
         [-10, 0, 10],
-        Extrapolate.CLAMP
+        Extrapolation.CLAMP
       );
 
       // Slightly scale down when dragging
@@ -233,7 +230,7 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
         Math.abs(event.translationX),
         [0, width / 2],
         [1, 0.95],
-        Extrapolate.CLAMP
+        Extrapolation.CLAMP
       );
     })
     .onEnd((event) => {
@@ -242,7 +239,7 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
 
       if (shouldSwipeLeft) {
         translateX.value = withSpring(-width * 1.5, { damping: 15 }, () => {
-          runOnJS(handleCardSwiped)('left');
+          scheduleOnRN(handleCardSwiped, 'left');
           translateX.value = 0;
           translateY.value = 0;
           rotate.value = 0;
@@ -250,7 +247,7 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
         });
       } else if (shouldSwipeRight) {
         translateX.value = withSpring(width * 1.5, { damping: 15 }, () => {
-          runOnJS(handleCardSwiped)('right');
+          scheduleOnRN(handleCardSwiped, 'right');
           translateX.value = 0;
           translateY.value = 0;
           rotate.value = 0;
@@ -283,7 +280,7 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
       translateX.value,
       [-SWIPE_THRESHOLD, -50, 0],
       [1, 0.6, 0],
-      Extrapolate.CLAMP
+      Extrapolation.CLAMP
     );
     return { opacity };
   });
@@ -293,10 +290,12 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
       translateX.value,
       [0, 50, SWIPE_THRESHOLD],
       [0, 0.6, 1],
-      Extrapolate.CLAMP
+      Extrapolation.CLAMP
     );
     return { opacity };
-  }); const renderCard = (pet, index, isBackground = false) => {
+  }); 
+  
+  const renderCard = (pet, index, isBackground = false) => {
     if (!pet) return null;
 
     const isFavorited = favoritedPets.has(String(pet.id));
@@ -327,15 +326,14 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
                 <Text style={styles.swipeText}>NOPE</Text>
               </Animated.View>
               <Animated.View style={[styles.swipeOverlay, styles.likeOverlay, rightOverlayStyle]}>
-                <Text style={styles.swipeText}>
-                  {swipeLoading ? 'SAVING...' : 'LIKE'}
-                </Text>
+                <Text style={styles.swipeText}>{swipeLoading ? 'SAVING...' : 'LIKE'}</Text>
               </Animated.View>
               {isFavorited && (
                 <View style={styles.favoriteIndicator}>
                   <Ionicons name="heart" size={20} color="#FF4949" />
                 </View>
-              )} 
+              )}
+              {/* Image Navigation */}
               {pet.images && pet.images.length > 1 && (
                 <View style={styles.imageNavigationContainer}>
                   <TouchableOpacity
@@ -349,7 +347,8 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
                     <Ionicons name="chevron-forward" size={28} color="white" />
                   </TouchableOpacity>
                 </View>
-              )}              <View style={styles.imageCounter}>
+              )}  
+              <View style={styles.imageCounter}>
                 {pet.images && pet.images.length > 1 && pet.images.map((_, imageIndex) => (
                   <View
                     key={imageIndex}
@@ -364,24 +363,22 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
           )}
         </View>
 
-        <View style={styles.cardContent}>          <View style={styles.header}>
+        <View style={styles.cardContent}>       
+          <View style={styles.header}>
           <Text style={styles.name}>{pet.name}</Text>
           {!isBackground && (
             <View style={styles.ageBreedRow}>
-              <Text style={styles.age}>
-                {pet.birthDate ? calculateAge(pet.birthDate) : 'Age unknown'}
-              </Text>
+              <Text style={styles.age}>{pet.birthDate ? calculateAge(pet.birthDate) : 'Age unknown'}</Text>
               <Text style={styles.dotText}>•</Text>
               <Text style={styles.breed}>{pet.breed || 'Unknown breed'}</Text>
             </View>
           )}
-        </View>          {!isBackground && (
+        </View>          
+        {!isBackground && (
           <>
             <View style={styles.locationContainer}>
               <Ionicons name="location" size={16} color="#666" />
-              <Text style={styles.location}>
-                {pet.location?.city || 'Unknown location'}
-              </Text>
+              <Text style={styles.location}>{pet.location?.city || 'Unknown location'}</Text>
             </View>
 
             <View style={styles.tags}>
@@ -405,9 +402,7 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
         )}
         </View>
       </TouchableOpacity>
-    );
-
-    if (isBackground) {
+    );    if (isBackground) {
       return (
         <View key={`background-${pet.id}-${index}`} style={cardStyle}>
           {content}
@@ -417,19 +412,18 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
 
     return (
       <GestureDetector gesture={panGesture} key={`current-${pet.id}-${index}`}>
-        <CardComponent style={cardStyle}>
-          {content}
-        </CardComponent>
+        <CardComponent style={cardStyle}>{content}</CardComponent>
       </GestureDetector>
     );
-  }; return (
+
+  };
+  
+  return (
     <View style={styles.container}>
       <View style={styles.cardContainer}>
-        {pets.length > 0 ? (
-          <>            {/* Stack effect - show background cards with proper preloading */}
-            {pets
-              .slice(currentCardIndex + 1, currentCardIndex + 1 + CARDS_TO_SHOW_BEHIND)
-              .map((pet, index) => {
+        {pets.length > 0 ? (          <>
+            {/* Stack effect - show background cards with proper preloading */}
+            {pets.slice(currentCardIndex + 1, currentCardIndex + 1 + CARDS_TO_SHOW_BEHIND).map((pet, index) => {
                 const backgroundCardStyle = {
                   transform: [
                     { scale: 1 - (index + 1) * 0.03 },
@@ -438,12 +432,13 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
                   zIndex: -(index + 1),
                   opacity: 1 - (index * 0.2)
                 };
-
+                
                 return (
                   <View
                     key={`background-${pet.id}-${currentCardIndex}-${index}`}
                     style={[styles.card, styles.backgroundCard, backgroundCardStyle]}
-                  >                    <View style={styles.imageContainer}>
+                  >                  
+                    <View style={styles.imageContainer}>
                       <Image
                         source={getImageSource(pet, 0)}
                         style={styles.cardImage}
@@ -459,7 +454,8 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
                   </View>
                 );
               })
-            }            {/* Current card */}
+            }
+            {/* Current card */}
             {pets[currentCardIndex] && renderCard(pets[currentCardIndex], currentCardIndex, false)}
 
             {/* Action buttons */}

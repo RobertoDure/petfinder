@@ -3,12 +3,12 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ActivityIndicator,
   TouchableOpacity,
   Modal,
   ScrollView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { AuthContext } from '../context/AuthContext';
 import PetService from '../services/PetService';
 import FavoritesService from '../services/FavoritesService';
@@ -129,10 +129,10 @@ const HomeScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+      {/* <View style={styles.header}>
         <Text style={styles.greeting}>Hi, {userInfo?.fullName || userInfo?.username || 'there'}!</Text>
         <Text style={styles.headerTitle}>Find your perfect pet</Text>
-      </View>
+      </View> */}
       
       <View style={styles.filterBar}>
         <TouchableOpacity

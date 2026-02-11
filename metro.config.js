@@ -20,7 +20,6 @@ config.transformer.assetPlugins = ['expo-asset/tools/hashAssetFiles'];
 // Handle image asset loading
 config.transformer.getTransformOptions = async () => ({
   transform: {
-    experimentalImportSupport: false,
     inlineRequires: true,
   },
 });

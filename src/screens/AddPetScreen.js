@@ -18,20 +18,23 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Picker } from '@react-native-picker/picker';
+import DropDownPicker from 'react-native-dropdown-picker';
 import { AuthContext } from '../context/AuthContext';
 import PetService from '../services/PetService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import breedsData from '../data/breeds.json';
 import petOptions from '../data/petOptions.json';
 
+// Alternative: Set global default to avoid adding listMode to each picker
+// DropDownPicker.setListMode("SCROLLVIEW");
+
 const AddPetScreen = ({ navigation }) => {
   const { userInfo } = useContext(AuthContext);
-    const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [images, setImages] = useState([]);
   const [imageCompressing, setImageCompressing] = useState(false);
   const [localUserInfo, setLocalUserInfo] = useState(userInfo);
-    // Fetch user info from AsyncStorage if not available in context
+  // Fetch user info from AsyncStorage if not available in context
   useEffect(() => {
     const checkUserInfo = async () => {
       // If userInfo from context is valid, use it
@@ -39,14 +42,14 @@ const AddPetScreen = ({ navigation }) => {
         setLocalUserInfo(userInfo);
         return;
       }
-      
+
       // Otherwise try to get from AsyncStorage
       try {
         const storedUserInfo = await AsyncStorage.getItem('userInfo');
         if (storedUserInfo) {
           const parsedUserInfo = JSON.parse(storedUserInfo);
           console.log('User info from AsyncStorage:', parsedUserInfo);
-          
+
           // Use the parsed userInfo even if it doesn't have an id
           // We'll handle missing id in the submit function
           if (parsedUserInfo) {
@@ -58,7 +61,7 @@ const AddPetScreen = ({ navigation }) => {
         console.error('Error fetching user info from storage:', error);
       }
     };
-    
+
     checkUserInfo();
   }, [userInfo]);    // Pet details state
   const [name, setName] = useState('');
@@ -70,44 +73,109 @@ const AddPetScreen = ({ navigation }) => {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [description, setDescription] = useState('');
   const [size, setSize] = useState('');
-  const [weight, setWeight] = useState('');
-  // Handle pet type change and reset breed
+  const [weight, setWeight] = useState('');  // Handle pet type change and reset breed
   const handleTypeChange = (newType) => {
     setType(newType);
     setBreed(''); // Reset breed when type changes
     setWeight(''); // Reset weight when type changes (different ranges for dogs/cats)
     // Size and color can remain the same as they're not type-specific
+
+    // Close all dropdowns when type changes
+    setBreedOpen(false);
+    setSizeOpen(false);
+    setWeightOpen(false);
+    setColorOpen(false);
   };
   const [color, setColor] = useState('');
-  
+
   // Health state
   const [vaccinated, setVaccinated] = useState(false);
   const [neutered, setNeutered] = useState(false);
   const [specialNeeds, setSpecialNeeds] = useState(false);
   const [specialNeedsDescription, setSpecialNeedsDescription] = useState('');
-  
+
   // Location state
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
   const [zipCode, setZipCode] = useState('');
   const [country, setCountry] = useState('');
+
+  // Dropdown picker states
+  const [breedOpen, setBreedOpen] = useState(false);
+  const [sizeOpen, setSizeOpen] = useState(false);
+  const [weightOpen, setWeightOpen] = useState(false);
+  const [colorOpen, setColorOpen] = useState(false);
+
+  // Dropdown items arrays
+  const [breedItems, setBreedItems] = useState([]);
+  const [sizeItems, setSizeItems] = useState(
+    petOptions.sizes.map(size => ({ label: size, value: size }))
+  );
+  const [weightItems, setWeightItems] = useState([]);
+  const [colorItems, setColorItems] = useState(
+    petOptions.colors.map(color => ({ label: color, value: color }))
+  );
+
+  // Update breed and weight items when type changes
+  useEffect(() => {
+    if (type) {
+      setBreedItems(
+        breedsData[type].map(breedOption => ({
+          label: breedOption,
+          value: breedOption
+        }))
+      );
+      setWeightItems(
+        petOptions.weightRanges[type].map(weightOption => ({
+          label: weightOption,
+          value: weightOption
+        }))
+      );
+    }
+  }, [type]);
+
+  // Dropdown open handlers to close other dropdowns when one opens
+  const onBreedOpen = () => {
+    setSizeOpen(false);
+    setWeightOpen(false);
+    setColorOpen(false);
+  };
+
+  const onSizeOpen = () => {
+    setBreedOpen(false);
+    setWeightOpen(false);
+    setColorOpen(false);
+  };
+
+  const onWeightOpen = () => {
+    setBreedOpen(false);
+    setSizeOpen(false);
+    setColorOpen(false);
+  };
+
+  const onColorOpen = () => {
+    setBreedOpen(false);
+    setSizeOpen(false);
+    setWeightOpen(false);
+  };
+
   // Image compression function optimized for Expo Go
   const compressAndResizeImage = async (imageUri) => {
     try {
       console.log('Starting compression for:', imageUri);
       console.log('Original URI length:', imageUri.length);
-      
+
       // Multi-stage compression using only expo-image-manipulator for Expo Go compatibility
       let currentUri = imageUri;
       let compressionQuality = 0.8; // Start with 80% quality
       let attempts = 0;
       const maxAttempts = 3;
-      
+
       while (attempts < maxAttempts) {
         try {
           console.log(`Compression attempt ${attempts + 1} with quality ${compressionQuality}`);
-          
+
           const manipulatedImage = await ImageManipulator.manipulateAsync(
             currentUri,
             [{ resize: { width: 500, height: 500 } }],
@@ -117,28 +185,28 @@ const AddPetScreen = ({ navigation }) => {
               base64: false,
             }
           );
-          
+
           console.log(`Compression result attempt ${attempts + 1}:`, manipulatedImage);
           currentUri = manipulatedImage.uri;
-          
+
           // For Expo Go, we'll accept the result after the first successful manipulation
           // since we can't easily check file size
           break;
-          
+
         } catch (error) {
           console.log(`Compression attempt ${attempts + 1} failed:`, error);
-          
+
           // Reduce quality for next attempt
           compressionQuality = Math.max(0.4, compressionQuality - 0.2);
           attempts++;
-          
+
           if (attempts === maxAttempts) {
             console.log('All compression attempts failed, using original image');
             currentUri = imageUri;
           }
         }
       }
-      
+
       console.log('Final compressed URI:', currentUri);
       return currentUri;
     } catch (error) {
@@ -261,7 +329,7 @@ const AddPetScreen = ({ navigation }) => {
     try {
       const remainingSlots = 5 - images.length;
       const assetsToProcess = selectedAssets.slice(0, remainingSlots);
-      
+
       if (selectedAssets.length > remainingSlots) {
         Alert.alert(
           'Image Limit',
@@ -270,11 +338,11 @@ const AddPetScreen = ({ navigation }) => {
       }
 
       const compressedImages = [];
-      
+
       for (let i = 0; i < assetsToProcess.length; i++) {
         const asset = assetsToProcess[i];
         console.log(`Processing image ${i + 1}/${assetsToProcess.length}:`, asset.uri);
-        
+
         try {
           const compressedUri = await compressAndResizeImage(asset.uri);
           compressedImages.push({
@@ -291,7 +359,7 @@ const AddPetScreen = ({ navigation }) => {
       }
 
       setImages(prevImages => [...prevImages, ...compressedImages]);
-      
+
       if (compressedImages.length > 0) {
         Alert.alert(
           'Success',
@@ -309,31 +377,50 @@ const AddPetScreen = ({ navigation }) => {
       Alert.alert('Limit Reached', 'You can add maximum 5 images');
       return;
     }
-    
+
     showImagePickerOptions();
   };
-    const removeImage = (index) => {
+  const removeImage = (index) => {
     const newImages = [...images];
     newImages.splice(index, 1);
     setImages(newImages);
-  };
-
+  };  // Handle date picker changes - properly close picker on iOS
   const onDateChange = (event, selectedDate) => {
-    const currentDate = selectedDate || new Date();
-    setShowDatePicker(Platform.OS === 'ios');
-    setSelectedDate(currentDate);
-    
-    // Format date as YYYY-MM-DD
-    const formattedDate = currentDate.toISOString().split('T')[0];
-    setBirthDate(formattedDate);
-  };  const showDatePickerModal = () => {
+    // On iOS, check event type to determine if user completed selection
+    if (Platform.OS === 'ios') {
+      // If user dismissed the picker without selecting, close it
+      if (event.type === 'dismissed') {
+        setShowDatePicker(false);
+        return;
+      }
+
+      // If user selected a date, close the picker and set the date
+      if (event.type === 'set' && selectedDate) {
+        setShowDatePicker(false);
+        setSelectedDate(selectedDate);
+
+        // Format date as YYYY-MM-DD
+        const formattedDate = selectedDate.toISOString().split('T')[0];
+        setBirthDate(formattedDate);
+      }
+    } else {
+      // Android behavior - automatically closes after selection
+      const currentDate = selectedDate || new Date();
+      setShowDatePicker(false);
+      setSelectedDate(currentDate);
+
+      // Format date as YYYY-MM-DD
+      const formattedDate = currentDate.toISOString().split('T')[0];
+      setBirthDate(formattedDate);
+    }
+  }; const showDatePickerModal = () => {
     setShowDatePicker(true);
   };
 
   // Convert weight range string to numeric value for API
   const convertWeightToNumber = (weightRange) => {
     if (!weightRange) return null;
-    
+
     if (weightRange.includes('Under')) {
       // Extract number from "Under X kg"
       const match = weightRange.match(/Under (\d+)/);
@@ -355,86 +442,86 @@ const AddPetScreen = ({ navigation }) => {
       const match = weightRange.match(/(\d+(?:\.\d+)?)/);
       return match ? parseFloat(match[1]) : null;
     }
-    
+
     return null;
-  };    const validateForm = () => {
+  }; const validateForm = () => {
     if (!name.trim()) {
       Alert.alert('Error', 'Please enter a name for your pet');
       return false;
     }
-    
+
     if (!breed.trim()) {
       Alert.alert('Error', 'Please select a breed');
       return false;
     }
-    
+
     if (!gender) {
       Alert.alert('Error', 'Please select a gender');
       return false;
     }
-    
+
     if (!size.trim()) {
       Alert.alert('Error', 'Please select a size');
       return false;
     }
-    
+
     if (!weight.trim()) {
       Alert.alert('Error', 'Please select a weight range');
       return false;
     }
-    
+
     if (!color.trim()) {
       Alert.alert('Error', 'Please select a color');
       return false;
     }
-    
+
     if (!description.trim()) {
       Alert.alert('Error', 'Please enter a description');
       return false;
     }
-    
+
     if (!city.trim()) {
       Alert.alert('Error', 'Please enter a city');
       return false;
     }
-    
+
     if (!state.trim()) {
       Alert.alert('Error', 'Please enter a state/province');
       return false;
     }
-    
+
     if (!zipCode.trim()) {
       Alert.alert('Error', 'Please enter a ZIP code');
       return false;
     }
-    
+
     if (!country.trim()) {
       Alert.alert('Error', 'Please enter a country');
       return false;
     }
-    
+
     if (images.length < 3) {
       Alert.alert('Error', 'Please add at least 3 images of your pet');
       return false;
     }
-    
+
     return true;
-  };const handleAddPet = async () => {
+  }; const handleAddPet = async () => {
     // Validate required fields first
     if (!validateForm()) {
       return;
     }
-    
+
     setLoading(true);
-    
+
     try {
       // Log the user info states for debugging
       console.log('Context userInfo:', userInfo);
       console.log('Local userInfo:', localUserInfo);
-      
+
       // Generate a temporary user ID if one is not available
-      let effectiveUserInfo = {...localUserInfo};
-      
+      let effectiveUserInfo = { ...localUserInfo };
+
       if (!localUserInfo) {
         // Try one more time to get user info from storage
         try {
@@ -457,7 +544,7 @@ const AddPetScreen = ({ navigation }) => {
           return;
         }
       }
-      
+
       // If we still don't have a user ID but have a username, create a temporary ID
       if (!effectiveUserInfo.id && effectiveUserInfo.username) {
         // Create a simple hash from the username as a temporary ID
@@ -481,7 +568,7 @@ const AddPetScreen = ({ navigation }) => {
         weight: convertWeightToNumber(weight),
         color,
         vaccinated,
-        neutered,        specialNeeds,
+        neutered, specialNeeds,
         specialNeedsDescription: specialNeeds ? specialNeedsDescription : null,
         status: 'AVAILABLE',
         tutorId: effectiveUserInfo.id, // Add the tutor ID from our effective user info
@@ -501,27 +588,30 @@ const AddPetScreen = ({ navigation }) => {
         Alert.alert('Error', 'No images provided. Please add pet images.');
         return;
       }
-      
+
       if (images.length < 3) {
         setLoading(false);
         Alert.alert('Error', `A minimum of 3 images is required for each pet. Currently you have ${images.length} image(s).`);
         return;
       }
-    // Use the approach that matches the API specification - sending images directly in the Pet object
-      try {        console.log('Creating pet with encoded images...');
+      // Use the approach that matches the API specification - sending images directly in the Pet object
+      try {
+        console.log('Creating pet with encoded images...');
         const newPet = await PetService.createPetWithEncodedImages(petData, images);
         Alert.alert(
           'Success',
           `${name} has been added for adoption!`,
-          [{ text: 'OK', onPress: () => {
-            resetForm();
-            navigation.navigate('Home');
-          }}]
+          [{
+            text: 'OK', onPress: () => {
+              resetForm();
+              navigation.navigate('Home');
+            }
+          }]
         );
         return;
       } catch (err) {
         console.log('Error creating pet with encoded images:', err.message);
-        
+
         // If it's a network error, show a friendly message with retry option
         if (!err.response && err.message.includes('Network Error')) {
           setLoading(false);
@@ -530,42 +620,44 @@ const AddPetScreen = ({ navigation }) => {
             'Could not connect to the server. Please check your internet connection and try again.',
             [
               { text: 'Cancel', style: 'cancel' },
-              { 
-                text: 'Retry', 
+              {
+                text: 'Retry',
                 onPress: () => {
                   setLoading(true);
                   // Small delay before retry
                   setTimeout(() => handleAddPet(), 1000);
-                } 
+                }
               }
             ]
           );
           return;
         }
-        
+
         // If the error is specifically about images, don't continue with other methods
         if (err.message && (
-            err.message.includes('image') || 
-            err.message.includes('minimum') ||
-            err.message.includes('required'))
+          err.message.includes('image') ||
+          err.message.includes('minimum') ||
+          err.message.includes('required'))
         ) {
           setLoading(false);
           Alert.alert('Error', err.message);
           return;
         }
-        
+
         // If the main approach fails but it's not a critical error, try the fallback approach
         try {
           console.log('Main approach failed, trying fallback method...');
           // Try traditional two-step process as fallback
-          const newPet = await PetService.createPet(petData);          await PetService.uploadPetImages(newPet.id, images);
-            Alert.alert(
+          const newPet = await PetService.createPet(petData); await PetService.uploadPetImages(newPet.id, images);
+          Alert.alert(
             'Success',
             `${name} has been added for adoption!`,
-            [{ text: 'OK', onPress: () => {
-              resetForm();
-              navigation.navigate('Home');
-            }}]
+            [{
+              text: 'OK', onPress: () => {
+                resetForm();
+                navigation.navigate('Home');
+              }
+            }]
           );
           return;
         } catch (fallbackErr) {
@@ -577,15 +669,15 @@ const AddPetScreen = ({ navigation }) => {
     } catch (finalError) {
       // If all approaches fail, handle it here
       console.error('All pet creation approaches failed:', finalError);
-      
+
       // Create a more user-friendly error message
       let errorMessage = 'Failed to add pet. Please try again.';
       let offerRetry = true;
-        // Handle custom error messages from our own code
+      // Handle custom error messages from our own code
       if (finalError.message && (
-          finalError.message.includes('images') || 
-          finalError.message.includes('minimum') ||
-          finalError.message.includes('required')
+        finalError.message.includes('images') ||
+        finalError.message.includes('minimum') ||
+        finalError.message.includes('required')
       )) {
         errorMessage = finalError.message;
         offerRetry = false; // No need to retry for validation errors
@@ -599,12 +691,12 @@ const AddPetScreen = ({ navigation }) => {
       else if (finalError.response) {
         // The server responded with an error status
         console.log('Server error response:', finalError.response);
-        
+
         if (finalError.response.data && finalError.response.data.error) {
           errorMessage = finalError.response.data.error;
         } else if (finalError.response.data && finalError.response.data.message) {
           errorMessage = finalError.response.data.message;
-          
+
           // Special handling for user ID related errors
           if (errorMessage.includes('tutor') || errorMessage.includes('user') || errorMessage.includes('id')) {
             errorMessage = 'There is an issue with your account. Please log out and log in again to refresh your profile.';
@@ -629,21 +721,21 @@ const AddPetScreen = ({ navigation }) => {
         errorMessage = 'Network error. Please check your internet connection.';
         offerRetry = true;
       }
-      
+
       // Finally show error to user with retry option if appropriate
       if (offerRetry) {
         Alert.alert(
-          'Error', 
+          'Error',
           errorMessage,
           [
             { text: 'Cancel', style: 'cancel' },
-            { 
-              text: 'Retry', 
+            {
+              text: 'Retry',
               onPress: () => {
                 setLoading(true);
                 // Small delay before retry
                 setTimeout(() => handleAddPet(), 1000);
-              } 
+              }
             }
           ]
         );
@@ -666,35 +758,33 @@ const AddPetScreen = ({ navigation }) => {
     setSize('');
     setWeight('');
     setColor('');
-    
+
     // Health
     setVaccinated(false);
     setNeutered(false);
     setSpecialNeeds(false);
     setSpecialNeedsDescription('');
-    
+
     // Location
     setAddress('');
     setCity('');
     setState('');
     setZipCode('');
     setCountry('');
-    
+
     // Images
     setImages([]);
   };
 
   // For demo, allow all users to add pets regardless of role
   const isTutor = true;
-  
+
   if (!isTutor) {
     return (
       <View style={styles.container}>
         <View style={styles.notTutorContainer}>
           <Ionicons name="paw" size={70} color="#CCCCCC" />
-          <Text style={styles.notTutorText}>
-            You need to be registered as a tutor to add pets for adoption.
-          </Text>
+          <Text style={styles.notTutorText}>You need to be registered as a tutor to add pets for adoption.</Text>
           <TouchableOpacity
             style={styles.becomeTutorButton}
             onPress={() => navigation.navigate('Profile')}
@@ -705,32 +795,30 @@ const AddPetScreen = ({ navigation }) => {
       </View>
     );
   }
-  
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
-      <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Add a Pet for Adoption</Text>
-        </View>
-          <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Pet Images</Text>
-          <Text style={styles.sectionDescription}>
-            Upload up to 5 photos of your pet. Images will be automatically optimized for faster loading.
-          </Text>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.scrollContent}
+        nestedScrollEnabled={true}
+      >
+        <View style={styles.header}><Text style={styles.title}>Add a Pet for Adoption</Text></View>
+        <View style={styles.section}><Text style={styles.sectionTitle}>Pet Images</Text>
+        <Text style={styles.sectionDescription}>Upload up to 5 photos of your pet. Images will be automatically optimized for faster loading.</Text>
           {imageCompressing && (
             <View style={styles.compressionStatus}>
               <ActivityIndicator size="small" color="#4CAF50" />
-              <Text style={styles.compressionText}>Optimizing images...</Text>
-            </View>
+              <Text style={styles.compressionText}>Optimizing images...</Text></View>
           )}
-          
-          <ScrollView 
-            horizontal 
+          <ScrollView
+            horizontal
             showsHorizontalScrollIndicator={false}
             style={styles.imagesContainer}
+            nestedScrollEnabled={true}
           >
             {images.map((image, index) => (
               <View key={index} style={styles.imageContainer}>
@@ -748,39 +836,35 @@ const AddPetScreen = ({ navigation }) => {
                 </TouchableOpacity>
               </View>
             ))}
-            
+
             {images.length < 5 && (
               <TouchableOpacity
                 style={[styles.addImageButton, imageCompressing && styles.addImageButtonDisabled]}
                 onPress={pickImages}
                 disabled={imageCompressing}
               >
-                <Ionicons 
-                  name="camera" 
-                  size={32} 
-                  color={imageCompressing ? "#CCC" : "#2196F3"} 
+                <Ionicons
+                  name="camera"
+                  size={32}
+                  color={imageCompressing ? "#CCC" : "#2196F3"}
                 />
                 <Text style={[styles.addImageText, imageCompressing && styles.addImageTextDisabled]}>
                   {imageCompressing ? 'Processing...' : 'Add Photo'}
                 </Text>
-                <Text style={[styles.addImageSubtext, imageCompressing && styles.addImageTextDisabled]}>
-                  Camera or Library
-                </Text>
+                <Text style={[styles.addImageSubtext, imageCompressing && styles.addImageTextDisabled]}>Camera or Library</Text>
               </TouchableOpacity>
             )}
           </ScrollView>
-            {images.length > 0 && (
+          {images.length > 0 && (
             <View style={styles.imageInfo}>
-              <Text style={styles.imageInfoText}>
-                📸 {images.length}/5 images • Photos optimized to 500×500px with Expo compression
-              </Text>
+              <Text style={styles.imageInfoText}>{`📸 ${images.length}/5 images • Photos optimized to 500×500px with Expo compression`}</Text>
             </View>
           )}
         </View>
-        
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Basic Information</Text>
-          
+
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Pet Name *</Text>
             <TextInput
@@ -791,44 +875,45 @@ const AddPetScreen = ({ navigation }) => {
               placeholderTextColor="#999"
             />
           </View>
-            <View style={styles.inputContainer}>
+          <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Pet Type *</Text>
             <View style={styles.segmentContainer}>
               <TouchableOpacity
                 style={[styles.segmentButton, type === 'DOG' && styles.segmentActive]}
                 onPress={() => handleTypeChange('DOG')}
               >
-                <Text style={[styles.segmentText, type === 'DOG' && styles.segmentActiveText]}>
-                  Dog
-                </Text>
-              </TouchableOpacity>
+                <Text style={[styles.segmentText, type === 'DOG' && styles.segmentActiveText]}>Dog</Text>
+
+                </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.segmentButton, type === 'CAT' && styles.segmentActive]}
                 onPress={() => handleTypeChange('CAT')}
               >
-                <Text style={[styles.segmentText, type === 'CAT' && styles.segmentActiveText]}>
-                  Cat
-                </Text>
+                <Text style={[styles.segmentText, type === 'CAT' && styles.segmentActiveText]}>Cat</Text>
               </TouchableOpacity>
             </View>
           </View>
-          
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Breed *</Text>
-            <View style={styles.pickerContainer}>
-              <Picker
-                selectedValue={breed}
-                style={styles.picker}
-                onValueChange={(itemValue) => setBreed(itemValue)}
-              >
-                <Picker.Item label="Select a breed..." value="" />
-                {breedsData[type].map((breedOption) => (
-                  <Picker.Item key={breedOption} label={breedOption} value={breedOption} />
-                ))}
-              </Picker>
-            </View>
+            <DropDownPicker
+              open={breedOpen}
+              value={breed}
+              items={breedItems}
+              setOpen={setBreedOpen}
+              setValue={setBreed}
+              setItems={setBreedItems}
+              placeholder="Select a breed..."
+              style={styles.dropdownStyle}
+              dropDownContainerStyle={styles.dropdownContainer}
+              textStyle={styles.dropdownText}
+              placeholderStyle={styles.dropdownPlaceholder}
+              zIndex={3000}
+              zIndexInverse={1000}
+              onOpen={onBreedOpen}
+              listMode="SCROLLVIEW"
+            />
           </View>
-          
+
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Gender *</Text>
             <View style={styles.segmentContainer}>
@@ -836,101 +921,107 @@ const AddPetScreen = ({ navigation }) => {
                 style={[styles.segmentButton, gender === 'MALE' && styles.segmentActive]}
                 onPress={() => setGender('MALE')}
               >
-                <Text style={[styles.segmentText, gender === 'MALE' && styles.segmentActiveText]}>
-                  Male
-                </Text>
+                <Text style={[styles.segmentText, gender === 'MALE' && styles.segmentActiveText]}>Male</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.segmentButton, gender === 'FEMALE' && styles.segmentActive]}
                 onPress={() => setGender('FEMALE')}
               >
-                <Text style={[styles.segmentText, gender === 'FEMALE' && styles.segmentActiveText]}>
-                  Female
-                </Text>
+                <Text style={[styles.segmentText, gender === 'FEMALE' && styles.segmentActiveText]}>Female</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.segmentButton, gender === 'UNKNOWN' && styles.segmentActive]}
                 onPress={() => setGender('UNKNOWN')}
               >
-                <Text style={[styles.segmentText, gender === 'UNKNOWN' && styles.segmentActiveText]}>
-                  Unknown
-                </Text>
+                <Text style={[styles.segmentText, gender === 'UNKNOWN' && styles.segmentActiveText]}>Unknown</Text>
               </TouchableOpacity>
             </View>
           </View>
-            <View style={styles.inputContainer}>
+          <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Birth Date (approximate)</Text>
             <TouchableOpacity
               style={styles.datePickerButton}
               onPress={showDatePickerModal}
             >
-              <Text style={[styles.datePickerText, !birthDate && styles.placeholderText]}>
-                {birthDate || 'Select birth date'}
-              </Text>
+              <Text style={[styles.datePickerText, !birthDate && styles.placeholderText]}>{birthDate || 'Select birth date'}</Text>
               <Ionicons name="calendar-outline" size={20} color="#666" />
             </TouchableOpacity>
-            
             {showDatePicker && (
               <DateTimePicker
                 value={selectedDate}
                 mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                display="default"
                 onChange={onDateChange}
                 maximumDate={new Date()}
                 minimumDate={new Date(1990, 0, 1)}
               />
             )}
           </View>
-            <View style={styles.inputContainer}>
+          <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Size</Text>
-            <View style={styles.pickerContainer}>
-              <Picker
-                selectedValue={size}
-                style={styles.picker}
-                onValueChange={(itemValue) => setSize(itemValue)}
-              >
-                <Picker.Item label="Select size..." value="" />
-                {petOptions.sizes.map((sizeOption) => (
-                  <Picker.Item key={sizeOption} label={sizeOption} value={sizeOption} />
-                ))}
-              </Picker>
-            </View>
+            <DropDownPicker
+              open={sizeOpen}
+              value={size}
+              items={sizeItems}
+              setOpen={setSizeOpen}
+              setValue={setSize}
+              setItems={setSizeItems}
+              placeholder="Select size..."
+              style={styles.dropdownStyle}
+              dropDownContainerStyle={styles.dropdownContainer}
+              textStyle={styles.dropdownText}
+              placeholderStyle={styles.dropdownPlaceholder}
+              zIndex={2000}
+              zIndexInverse={2000}
+              onOpen={onSizeOpen}
+              listMode="SCROLLVIEW"
+            />
           </View>
-          
+
           <View style={styles.rowContainer}>
             <View style={[styles.inputContainer, { flex: 1, marginRight: 10 }]}>
-              <Text style={styles.inputLabel}>Weight Range</Text>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={weight}
-                  style={styles.picker}
-                  onValueChange={(itemValue) => setWeight(itemValue)}
-                >
-                  <Picker.Item label="Select weight range..." value="" />
-                  {petOptions.weightRanges[type].map((weightOption) => (
-                    <Picker.Item key={weightOption} label={weightOption} value={weightOption} />
-                  ))}
-                </Picker>
-              </View>
+              <Text style={styles.inputLabel}>Weight Range</Text>   
+              <DropDownPicker
+                open={weightOpen}
+                value={weight}
+                items={weightItems}
+                setOpen={setWeightOpen}
+                setValue={setWeight}
+                setItems={setWeightItems}
+                placeholder="Select weight range..."
+                style={styles.dropdownStyle}
+                dropDownContainerStyle={styles.dropdownContainer}
+                textStyle={styles.dropdownText}
+                placeholderStyle={styles.dropdownPlaceholder}
+                zIndex={1000}
+                zIndexInverse={3000}
+                onOpen={onWeightOpen}
+                listMode="SCROLLVIEW"
+              />
             </View>
-            
+
             <View style={[styles.inputContainer, { flex: 1 }]}>
-              <Text style={styles.inputLabel}>Color</Text>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={color}
-                  style={styles.picker}
-                  onValueChange={(itemValue) => setColor(itemValue)}
-                >
-                  <Picker.Item label="Select color..." value="" />
-                  {petOptions.colors.map((colorOption) => (
-                    <Picker.Item key={colorOption} label={colorOption} value={colorOption} />
-                  ))}
-                </Picker>
-              </View>
+              <Text style={styles.inputLabel}>Color</Text>       
+               <DropDownPicker
+                open={colorOpen}
+                value={color}
+                items={colorItems}
+                setOpen={setColorOpen}
+                setValue={setColor}
+                setItems={setColorItems}
+                placeholder="Select color..."
+                style={styles.dropdownStyle}
+                dropDownContainerStyle={styles.dropdownContainer}
+                textStyle={styles.dropdownText}
+                placeholderStyle={styles.dropdownPlaceholder}
+                zIndex={1000}
+                zIndexInverse={3000}
+                onOpen={onColorOpen}
+                listMode="SCROLLVIEW"
+              />
             </View>
           </View>
-          
+
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Description *</Text>
             <TextInput
@@ -945,10 +1036,10 @@ const AddPetScreen = ({ navigation }) => {
             />
           </View>
         </View>
-        
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Health Information</Text>
-          
+
           <View style={styles.switchContainer}>
             <Text style={styles.switchLabel}>Vaccinated</Text>
             <Switch
@@ -958,7 +1049,7 @@ const AddPetScreen = ({ navigation }) => {
               thumbColor={vaccinated ? "#FF6B6B" : "#F4F3F4"}
             />
           </View>
-          
+
           <View style={styles.switchContainer}>
             <Text style={styles.switchLabel}>Neutered/Spayed</Text>
             <Switch
@@ -968,7 +1059,7 @@ const AddPetScreen = ({ navigation }) => {
               thumbColor={neutered ? "#FF6B6B" : "#F4F3F4"}
             />
           </View>
-          
+
           <View style={styles.switchContainer}>
             <Text style={styles.switchLabel}>Special Needs</Text>
             <Switch
@@ -978,7 +1069,7 @@ const AddPetScreen = ({ navigation }) => {
               thumbColor={specialNeeds ? "#FF6B6B" : "#F4F3F4"}
             />
           </View>
-          
+
           {specialNeeds && (
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>Special Needs Description</Text>
@@ -995,10 +1086,10 @@ const AddPetScreen = ({ navigation }) => {
             </View>
           )}
         </View>
-        
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Location</Text>
-          
+
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Address</Text>
             <TextInput
@@ -1009,7 +1100,7 @@ const AddPetScreen = ({ navigation }) => {
               placeholderTextColor="#999"
             />
           </View>
-          
+
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>City *</Text>
             <TextInput
@@ -1020,7 +1111,7 @@ const AddPetScreen = ({ navigation }) => {
               placeholderTextColor="#999"
             />
           </View>
-          
+
           <View style={styles.rowContainer}>
             <View style={[styles.inputContainer, { flex: 1, marginRight: 10 }]}>
               <Text style={styles.inputLabel}>State/Province</Text>
@@ -1032,7 +1123,7 @@ const AddPetScreen = ({ navigation }) => {
                 placeholderTextColor="#999"
               />
             </View>
-            
+
             <View style={[styles.inputContainer, { flex: 1 }]}>
               <Text style={styles.inputLabel}>ZIP Code</Text>
               <TextInput
@@ -1044,7 +1135,7 @@ const AddPetScreen = ({ navigation }) => {
               />
             </View>
           </View>
-          
+
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Country</Text>
             <TextInput
@@ -1056,7 +1147,7 @@ const AddPetScreen = ({ navigation }) => {
             />
           </View>
         </View>
-        
+
         <TouchableOpacity
           style={[styles.submitButton, loading && styles.disabledButton]}
           onPress={handleAddPet}
@@ -1139,7 +1230,7 @@ const styles = StyleSheet.create({
     right: -10,
     backgroundColor: 'rgba(0,0,0,0.5)',
     borderRadius: 15,
-  },  addImageButton: {
+  }, addImageButton: {
     width: 120,
     height: 120,
     borderRadius: 12,
@@ -1209,7 +1300,7 @@ const styles = StyleSheet.create({
     color: '#555',
     marginBottom: 5,
     fontWeight: '500',
-  },  input: {
+  }, input: {
     backgroundColor: '#F9F9F9',
     borderWidth: 1,
     borderColor: '#EEE',
@@ -1264,24 +1355,36 @@ const styles = StyleSheet.create({
   },
   segmentActive: {
     backgroundColor: '#FF6B6B',
-  },
-  segmentText: {
+  }, segmentText: {
     color: '#666',
     fontWeight: '500',
-  },  segmentActiveText: {
+  },
+  segmentActiveText: {
     color: 'white',
   },
-  pickerContainer: {
+  // New dropdown picker styles
+  dropdownStyle: {
     backgroundColor: '#F9F9F9',
     borderWidth: 1,
     borderColor: '#EEE',
     borderRadius: 8,
-    overflow: 'hidden',
-  },
-  picker: {
     height: 46,
-    width: '100%',
+    minHeight: 46,
+  },
+  dropdownContainer: {
+    backgroundColor: '#F9F9F9',
+    borderWidth: 1,
+    borderColor: '#EEE',
+    borderRadius: 8,
+    maxHeight: 200,
+  },
+  dropdownText: {
+    fontSize: 15,
     color: '#333',
+  },
+  dropdownPlaceholder: {
+    fontSize: 15,
+    color: '#999',
   },
   switchContainer: {
     flexDirection: 'row',
