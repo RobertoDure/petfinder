@@ -73,36 +73,15 @@ const PetService = {
     }
   },  createPet: async (petData) => {
     try {
-      // Add detailed error logging to help troubleshoot API errors
-      try {
-        const response = await apiClient.post('/pets', petData);
-        return response.data;
-      } catch (error) {
-        if (error.response) {
-          // The server responded with a status code outside the 2xx range
-          console.error('Error creating pet:', {
-            status: error.response.status,
-            data: error.response.data,
-            petData: JSON.stringify(petData)
-          });
-          
-          // Add more specific error messages
-          if (error.response.status === 400) {
-            if (error.response.data && error.response.data.error) {
-              error.message = error.response.data.error;
-            } else {
-              error.message = 'Invalid pet data. Please check all required fields.';
-            }
-          }
-        } else if (error.request) {
-          // The request was made but no response was received
-          console.error('Network error creating pet:', error.request);
-          error.message = 'Network error. Please check your connection.';
-        }
-        throw error;
-      }
+      const response = await apiClient.post('/pets', petData);
+      return response.data;
     } catch (error) {
-      console.error('Error creating pet:', error);
+      if (error.response?.status === 400) {
+        error.message =
+          error.response.data?.error || 'Invalid pet data. Please check all required fields.';
+      } else if (error.request) {
+        error.message = 'Network error. Please check your connection.';
+      }
       throw error;
     }
   },
