@@ -34,66 +34,50 @@ const HomeScreen = ({ navigation }) => {
   
   // Load pets on component mount
   useEffect(() => {
-    fetchPets();
+    fetchPets(filters);
   }, []);
-  
-  const fetchPets = async () => {
+
+  const fetchPets = async (activeFilters = filters) => {
     setLoading(true);
     setError(null);
-    
+
     try {
-      // Get all available pets
       const availablePets = await PetService.getPetsByStatus('AVAILABLE');
-      
-      // Apply filters
+
       let filteredPets = availablePets;
-      
-      if (filters.type) {
-        filteredPets = filteredPets.filter(pet => pet.type === filters.type);
+
+      if (activeFilters.type) {
+        filteredPets = filteredPets.filter(pet => pet.type === activeFilters.type);
       }
-      
-      if (filters.gender) {
-        filteredPets = filteredPets.filter(pet => pet.gender === filters.gender);
+      if (activeFilters.gender) {
+        filteredPets = filteredPets.filter(pet => pet.gender === activeFilters.gender);
       }
-      
-      if (filters.vaccinated !== null) {
-        filteredPets = filteredPets.filter(pet => pet.vaccinated === filters.vaccinated);
+      if (activeFilters.vaccinated !== null) {
+        filteredPets = filteredPets.filter(pet => pet.vaccinated === activeFilters.vaccinated);
       }
-      
-      if (filters.neutered !== null) {
-        filteredPets = filteredPets.filter(pet => pet.neutered === filters.neutered);
+      if (activeFilters.neutered !== null) {
+        filteredPets = filteredPets.filter(pet => pet.neutered === activeFilters.neutered);
       }
-      
-      if (filters.specialNeeds !== null) {
-        filteredPets = filteredPets.filter(pet => pet.specialNeeds === filters.specialNeeds);
+      if (activeFilters.specialNeeds !== null) {
+        filteredPets = filteredPets.filter(pet => pet.specialNeeds === activeFilters.specialNeeds);
       }
-      
+
       setPets(filteredPets);
     } catch (err) {
-      console.error('Failed to fetch pets:', err);
       setError('Failed to load pets. Please try again.');
     } finally {
       setLoading(false);
     }
   };
-    const handleSwipeLeft = (pet) => {
-    console.log('Swiped left (rejected) pet:', pet.name);
-    // Here you could add logic to ensure this pet doesn't show up again
-    // For now, we just log the action
+    const handleSwipeLeft = (_pet) => {
+    // Future: track rejected pets to avoid re-showing them
   };
-  
+
   const handleSwipeRight = async (pet) => {
-    console.log('Swiped right (liked) pet:', pet.name);
-    // Add pet to favorites when swiped right
     try {
-      const success = await FavoritesService.addFavorite(pet.id);
-      if (success) {
-        console.log(`Pet ${pet.name} added to favorites successfully`);
-      } else {
-        console.error(`Failed to add pet ${pet.name} to favorites`);
-      }
-    } catch (error) {
-      console.error('Error adding pet to favorites:', error);
+      await FavoritesService.addFavorite(pet.id);
+    } catch {
+      // Swipe failures are silent; the user can still favourite from the detail screen
     }
   };
   
@@ -103,7 +87,7 @@ const HomeScreen = ({ navigation }) => {
   
   const applyFilters = () => {
     setFilterModalVisible(false);
-    fetchPets();
+    fetchPets(filters);
   };
   
   const resetFilters = () => {
@@ -144,11 +128,12 @@ const HomeScreen = ({ navigation }) => {
         </TouchableOpacity>
         
         {Object.values(filters).some(value => value !== null) && (
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.clearFiltersButton}
             onPress={() => {
-              resetFilters();
-              setTimeout(() => fetchPets(), 100);
+              const empty = { type: null, gender: null, vaccinated: null, neutered: null, specialNeeds: null };
+              setFilters(empty);
+              fetchPets(empty);
             }}
           >
             <Text style={styles.clearFiltersText}>Clear All</Text>
@@ -167,7 +152,7 @@ const HomeScreen = ({ navigation }) => {
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity 
             style={styles.retryButton}
-            onPress={fetchPets}
+            onPress={() => fetchPets(filters)}
           >
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>

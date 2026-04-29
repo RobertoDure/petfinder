@@ -12,7 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import FavoritesService from '../services/FavoritesService';
-import FavoritesDebugger from '../utils/FavoritesDebugger';
+import ImagesService from '../services/ImagesService';
 
 const FavoritesScreen = ({ navigation }) => {
   const [favorites, setFavorites] = useState([]);
@@ -21,15 +21,9 @@ const FavoritesScreen = ({ navigation }) => {
     const loadFavorites = async () => {
     try {
       setLoading(true);
-      
-      // Debug: Log current favorites state
-      await FavoritesDebugger.logFavorites();
-      
       const favoritePets = await FavoritesService.getFavorites();
-      console.log('Loaded favorites:', favoritePets.length, 'pets');
       setFavorites(favoritePets);
-    } catch (error) {
-      console.error('Error loading favorites:', error);
+    } catch {
       setFavorites([]);
     } finally {
       setLoading(false);
@@ -61,10 +55,9 @@ const FavoritesScreen = ({ navigation }) => {
     }
   };
     const renderPetItem = ({ item }) => {
-    // Get the image URL for the pet
     const getImageUrl = () => {
       if (item.images && item.images.length > 0) {
-        return `http://192.168.0.139:8080/api/pets/images/${item.images[0].id}`;
+        return ImagesService.getImageUri(item.images[0].id);
       }
       return null;
     };

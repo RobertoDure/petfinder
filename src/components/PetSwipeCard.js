@@ -13,7 +13,7 @@ import Animated, {
 import { scheduleOnRN } from 'react-native-worklets';
 import { Ionicons } from '@expo/vector-icons';
 import FavoritesService from '../services/FavoritesService';
-import apiClient from '../services/apiClient'; // Adjust the import path as necessary
+import ImagesService from '../services/ImagesService';
 
 const { width, height } = Dimensions.get('window');
 const SWIPE_THRESHOLD = width * 0.25;
@@ -37,13 +37,13 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
   const translateY = useSharedValue(0);
   const scale = useSharedValue(1);
   const rotate = useSharedValue(0);
-  // Load favorited pets when component mounts or pets change
+  // Load favorited pets when component mounts or pets change.
+  // preloadImages is intentionally NOT called here; the [currentCardIndex] effect handles it.
   useEffect(() => {
     loadFavoritedPets();
-    preloadImages();
   }, [pets]);
 
-  // Preload images when currentCardIndex changes
+  // Preload images when currentCardIndex changes (covers initial load too)
   useEffect(() => {
     preloadImages();
   }, [currentCardIndex]);
@@ -92,7 +92,7 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
           if (preloadedImages.has(imageKey)) {
             newPreloadedImages.set(imageKey, preloadedImages.get(imageKey));
           } else {
-            const imageUri = `http://192.168.0.139:8080/api/pets/images/${imageData.id}`;
+            const imageUri = ImagesService.getImageUri(imageData.id);
 
             newPreloadedImages.set(imageKey, {
               uri: imageUri,
@@ -135,7 +135,7 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
     }
 
     // Fallback to direct URI if not preloaded
-    return { uri: `http://192.168.0.139:8080/api/pets/images/${imageData.id}` };
+    return { uri: ImagesService.getImageUri(imageData.id) };
   };
 
   // Function to handle image cycling within a card
@@ -159,10 +159,8 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
     if (!pet) return;
 
     if (direction === 'left') {
-      console.log('Swiped left (rejected) pet:', pet.name);
       if (onSwipeLeft) onSwipeLeft(pet);
     } else if (direction === 'right') {
-      console.log('Swiped right (liked) pet:', pet.name);
       handleSwipeRight(pet);
     }
 
@@ -176,17 +174,12 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
     setSwipeLoading(true);
 
     try {
-      // Add to favorites using AsyncStorage
       const success = await FavoritesService.addFavorite(pet.id);
       if (success) {
-        // Update local state to reflect the change
         setFavoritedPets(prev => new Set([...prev, String(pet.id)]));
-        console.log(`Pet ${pet.name} added to favorites successfully`);
-      } else {
-        console.error(`Failed to add pet ${pet.name} to favorites`);
       }
-    } catch (error) {
-      console.error('Error adding pet to favorites:', error);
+    } catch {
+      // Swipe-to-favourite failure is silent; user can retry from detail screen
     } finally {
       setSwipeLoading(false);
     }

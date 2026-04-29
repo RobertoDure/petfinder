@@ -1,8 +1,8 @@
 import React, { useContext } from 'react';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { AuthContext } from '../context/AuthContext';
-import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 // Auth Screens
@@ -20,84 +20,86 @@ import AddPetScreen from '../screens/AddPetScreen';
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-const AuthStack = () => {
-  return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="Register" component={RegisterScreen} />
-    </Stack.Navigator>
-  );
+// Icon map: route name → [focusedIcon, unfocusedIcon]
+const TAB_ICONS = {
+  Home:      ['pets',           'pets'],
+  Search:    ['search',         'search'],
+  Favorites: ['favorite',       'favorite-border'],
+  AddPet:    ['add-circle',     'add-circle-outline'],
+  Profile:   ['person',         'person-outline'],
 };
 
-const MainTabNavigator = () => {
-  return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color, size }) => {
-          let iconName;
-          
-          if (route.name === 'Home') {
-            iconName = focused ? 'pets' : 'pets';
-          } else if (route.name === 'Search') {
-            iconName = focused ? 'search' : 'search';
-          } else if (route.name === 'Favorites') {
-            iconName = focused ? 'favorite' : 'favorite';
-          } else if (route.name === 'Profile') {
-            iconName = focused ? 'person' : 'person';
-          } else if (route.name === 'AddPet') {
-            iconName = focused ? 'add' : 'add';
-          }
-          
-          return <MaterialIcons name={iconName} size={size} color={color} />;
-        },
-        tabBarActiveTintColor: '#FF6B6B',
-        tabBarInactiveTintColor: 'gray',
-        headerShown: false,
+const AuthStack = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="Login" component={LoginScreen} />
+    <Stack.Screen name="Register" component={RegisterScreen} />
+  </Stack.Navigator>
+);
+
+const MainTabNavigator = () => (
+  <Tab.Navigator
+    screenOptions={({ route }) => ({
+      tabBarIcon: ({ focused, color, size }) => {
+        const [activeIcon, inactiveIcon] = TAB_ICONS[route.name] ?? ['help', 'help-outline'];
+        return (
+          <MaterialIcons
+            name={focused ? activeIcon : inactiveIcon}
+            size={size}
+            color={color}
+          />
+        );
+      },
+      tabBarActiveTintColor: '#FF6B6B',
+      tabBarInactiveTintColor: 'gray',
+      headerShown: false,
+    })}
+  >
+    <Tab.Screen name="Home" component={HomeScreen} />
+    <Tab.Screen name="Favorites" component={FavoritesScreen} />
+    <Tab.Screen name="AddPet" component={AddPetScreen} options={{ tabBarLabel: 'Add Pet' }} />
+    <Tab.Screen name="Profile" component={ProfileScreen} />
+  </Tab.Navigator>
+);
+
+const MainStack = () => (
+  <Stack.Navigator>
+    <Stack.Screen
+      name="MainTabs"
+      component={MainTabNavigator}
+      options={{ headerShown: false }}
+    />
+    <Stack.Screen
+      name="PetDetail"
+      component={PetDetailScreen}
+      options={({ route }) => ({
+        title: route.params?.pet?.name || 'Pet Details',
+        headerBackTitleVisible: false,
       })}
-    >
-      
-      {/* <Tab.Screen name="Search" component={SearchScreen} /> */}
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Favorites" component={FavoritesScreen} />     
-      <Tab.Screen name="AddPet" component={AddPetScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
-    </Tab.Navigator>
-  );
-};
-
-const MainStack = () => {
-  return (
-    <Stack.Navigator>
-      <Stack.Screen 
-        name="MainTabs" 
-        component={MainTabNavigator}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen 
-        name="PetDetail" 
-        component={PetDetailScreen} 
-        options={({ route }) => ({ 
-          title: route.params?.pet?.name || 'Pet Details',
-          headerBackTitleVisible: false 
-        })}
-      />
-    </Stack.Navigator>
-  );
-};
+    />
+  </Stack.Navigator>
+);
 
 const AppNavigator = () => {
   const { userToken, isLoading } = useContext(AuthContext);
 
   if (isLoading) {
-    // Return a loading screen
-    return null;
+    return (
+      <View style={styles.splash}>
+        <ActivityIndicator size="large" color="#FF6B6B" />
+      </View>
+    );
   }
 
-  return (
-    <>
-      {userToken !== null ? <MainStack /> : <AuthStack />}
-    </>
-  );
+  return userToken !== null ? <MainStack /> : <AuthStack />;
 };
+
+const styles = StyleSheet.create({
+  splash: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+});
 
 export default AppNavigator;

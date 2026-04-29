@@ -13,7 +13,8 @@
     },
     "assetBundlePatterns": [
       "**/*"
-    ],    "ios": {
+    ],
+    "ios": {
       "supportsTablet": true,
       "infoPlist": {
         "NSAppTransportSecurity": {
@@ -40,8 +41,17 @@
         "foregroundImage": "./src/assets/petfinder-logo.png",
         "backgroundColor": "#ffffff"
       },
-      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE", "ACCESS_MEDIA_LOCATION", 
-        "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "CAMERA_ROLL", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO"]
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "ACCESS_MEDIA_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA_ROLL",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO"
+      ]
     },
     "web": {
       "favicon": "./src/assets/petfinder-logo.png"
@@ -52,7 +62,8 @@
         {
           "photosPermission": "The app needs access to your photos to let you add pet images."
         }
-      ]
+      ],
+      "expo-secure-store"
     ]
   }
 }

@@ -1,89 +1,65 @@
 import React, { createContext, useState, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import AuthService from '../services/AuthService';
+import secureStorage from '../utils/secureStorage';
 
 export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
+  // isLoading is ONLY for the initial session-restore check.
+  // Login/register screens manage their own loading state locally.
   const [isLoading, setIsLoading] = useState(true);
   const [userToken, setUserToken] = useState(null);
   const [userInfo, setUserInfo] = useState(null);
   const [refreshToken, setRefreshToken] = useState(null);
-  
-  const login = async (username, password) => {
-    try {
-      setIsLoading(true);
-      const response = await AuthService.login(username, password);
 
-      if (response.accessToken) {
-        setUserToken(response.accessToken);
-        setRefreshToken(response.refreshToken);
-        
-        // Store user info from the response
-        const userInfoData = {
-          id: response.userId || response.id,  // Get user ID from response
-          username: username,
-          role: response.role,                // Get user role from response
-        };
-        
-        setUserInfo(userInfoData);
-      }
-      setIsLoading(false);
-      return response;
-    } catch (error) {
-      setIsLoading(false);
-      throw error;
+  const login = async (username, password) => {
+    const response = await AuthService.login(username, password);
+
+    if (response.accessToken) {
+      setUserToken(response.accessToken);
+      setRefreshToken(response.refreshToken);
+      setUserInfo({
+        id: response.userId || response.id,
+        username,
+        role: response.role,
+      });
     }
-  };  const register = async (registerData) => {
-    try {
-      setIsLoading(true);
-      const response = await AuthService.register(registerData);
-      
-      if (response.accessToken) {
-        setUserToken(response.accessToken);
-        setRefreshToken(response.refreshToken);
-        
-        const userInfoData = {
-          id: response.userId || response.id,
-          username: registerData.username,
-          email: registerData.email,
-          fullName: registerData.fullName,
-          role: response.role,
-        };
-        
-        setUserInfo(userInfoData);
-      }
-      setIsLoading(false);
-      return response;
-    } catch (error) {
-      setIsLoading(false);
-      throw error;
-    }
+    return response;
   };
+
+  const register = async (registerData) => {
+    const response = await AuthService.register(registerData);
+
+    if (response.accessToken) {
+      setUserToken(response.accessToken);
+      setRefreshToken(response.refreshToken);
+      setUserInfo({
+        id: response.userId || response.id,
+        username: registerData.username,
+        email: registerData.email,
+        fullName: registerData.fullName,
+        role: response.role,
+      });
+    }
+    return response;
+  };
+
   const logout = async () => {
-    setIsLoading(true);
     await AuthService.logout();
     setUserToken(null);
     setUserInfo(null);
     setRefreshToken(null);
-    setIsLoading(false);
   };
 
   const refreshAccessToken = async () => {
     try {
-      if (!refreshToken) return null;
-      
       const newToken = await AuthService.refreshToken();
-      
       if (newToken) {
         setUserToken(newToken);
-        // The refreshToken function in AuthService already updates AsyncStorage
         return newToken;
       }
       return null;
-    } catch (error) {
-      console.log('Token refresh failed', error);
-      // If refresh token is expired, logout the user
+    } catch {
       await logout();
       return null;
     }
@@ -91,23 +67,20 @@ export const AuthProvider = ({ children }) => {
 
   const isLoggedIn = async () => {
     try {
-      setIsLoading(true);
-      const token = await AuthService.getUserToken();
-      const userInfoData = await AuthService.getUserInfo();
-      const refreshTokenValue = await AsyncStorage.getItem('refreshToken');
-      
-      if (userInfoData) {
-        setUserInfo(userInfoData);
-      }
-      
+      const [token, userInfoData, refreshTokenValue] = await Promise.all([
+        AuthService.getUserToken(),
+        AuthService.getUserInfo(),
+        secureStorage.getRefreshToken(),
+      ]);
+
+      if (userInfoData) setUserInfo(userInfoData);
       if (token) {
         setUserToken(token);
         setRefreshToken(refreshTokenValue);
       }
-      
-      setIsLoading(false);
-    } catch (e) {
-      console.log(`isLoggedIn Error: ${e}`);
+    } catch {
+      // Session restore failed – user stays logged out
+    } finally {
       setIsLoading(false);
     }
   };
@@ -126,7 +99,7 @@ export const AuthProvider = ({ children }) => {
         isLoading,
         userToken,
         userInfo,
-        refreshToken
+        refreshToken,
       }}
     >
       {children}
