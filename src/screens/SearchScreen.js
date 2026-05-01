@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,27 +9,60 @@ import {
   Image,
   ActivityIndicator,
   ScrollView,
+  Pressable,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import PetService from '../services/PetService';
+import ImagesService from '../services/ImagesService';
+
+// Extracted outside component so React never treats it as a new component type on re-render
+const FilterButton = ({ label, isActive, onPress }) => (
+  <Pressable
+    style={[styles.filterButton, isActive && styles.activeFilterButton]}
+    onPress={onPress}
+  >
+    <Text style={[styles.filterButtonText, isActive && styles.activeFilterButtonText]}>
+      {label}
+    </Text>
+  </Pressable>
+);
 
 const SearchScreen = ({ navigation }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [pets, setPets] = useState([]);
   const [filteredPets, setFilteredPets] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [searching, setSearching] = useState(false);
-  
+
   // Filter options
   const [selectedType, setSelectedType] = useState(null); // 'DOG' or 'CAT'
   const [selectedStatus, setSelectedStatus] = useState('AVAILABLE');
-  
-  useEffect(() => {
-    // Load all pets on component mount
-    fetchPets();
+
+  const filterPets = useCallback((petsData, query, type, status) => {
+    let filtered = [...petsData];
+
+    if (query) {
+      const lower = query.toLowerCase();
+      filtered = filtered.filter(
+        pet =>
+          pet.name.toLowerCase().includes(lower) ||
+          (pet.breed && pet.breed.toLowerCase().includes(lower)) ||
+          (pet.description && pet.description.toLowerCase().includes(lower))
+      );
+    }
+
+    if (type) {
+      filtered = filtered.filter(pet => pet.type === type);
+    }
+
+    if (status) {
+      filtered = filtered.filter(pet => pet.status === status);
+    }
+
+    setFilteredPets(filtered);
   }, []);
-  
-  const fetchPets = async () => {
+
+  const fetchPets = useCallback(async () => {
     setLoading(true);
     try {
       const allPets = await PetService.getAllPets();
@@ -40,118 +73,85 @@ const SearchScreen = ({ navigation }) => {
     } finally {
       setLoading(false);
     }
-  };
-  
-  const filterPets = (petsData, query, type, status) => {
-    let filtered = [...petsData];
-    
-    // Filter by search query (search in name, breed, description)
-    if (query) {
-      filtered = filtered.filter(
-        pet => 
-          pet.name.toLowerCase().includes(query.toLowerCase()) ||
-          (pet.breed && pet.breed.toLowerCase().includes(query.toLowerCase())) ||
-          (pet.description && pet.description.toLowerCase().includes(query.toLowerCase()))
-      );
-    }
-    
-    // Filter by type
-    if (type) {
-      filtered = filtered.filter(pet => pet.type === type);
-    }
-    
-    // Filter by status
-    if (status) {
-      filtered = filtered.filter(pet => pet.status === status);
-    }
-    
-    setFilteredPets(filtered);
-  };
-  
-  const handleSearch = () => {
-    setSearching(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally run only on mount; filter state is empty at that point
+
+  useEffect(() => {
+    fetchPets();
+  }, [fetchPets]);
+
+  const handleSearch = useCallback(() => {
     filterPets(pets, searchQuery, selectedType, selectedStatus);
-    setSearching(false);
-  };
-  
-  const handleTypeFilter = (type) => {
+  }, [filterPets, pets, searchQuery, selectedType, selectedStatus]);
+
+  const handleTypeFilter = useCallback((type) => {
     const newType = selectedType === type ? null : type;
     setSelectedType(newType);
     filterPets(pets, searchQuery, newType, selectedStatus);
-  };
-  
-  const handleStatusFilter = (status) => {
+  }, [filterPets, pets, searchQuery, selectedType, selectedStatus]);
+
+  const handleStatusFilter = useCallback((status) => {
     setSelectedStatus(status);
     filterPets(pets, searchQuery, selectedType, status);
-  };
-  
-  const renderPetItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.petCard}
-      onPress={() => navigation.navigate('PetDetail', { pet: item })}
-    >
-      <Image
-        source={
-          item.images && item.images.length > 0
-            ? { uri: `http://192.168.0.139:8080/api/pets/images/${item.images[0].id}` }
-            : require('../assets/pet-placeholder.png')
-        }
-        style={styles.petImage}
-        resizeMode="cover"
-      />
-      
-      <View style={styles.petInfo}>
-        <Text style={styles.petName}>{item.name}</Text>
-        <View style={styles.petDetails}>
-          <Text style={styles.petBreed}>{item.breed}</Text>
-          {item.location && (
-            <View style={styles.locationContainer}>
-              <Ionicons name="location" size={12} color="#666" />
-              <Text style={styles.locationText}>
-                {item.location.city}
-              </Text>
-            </View>
-          )}
-        </View>
-        
-        <View style={styles.tagsContainer}>
-          <View style={[styles.tag, { backgroundColor: item.type === 'DOG' ? '#E1F5E9' : '#E7F3FF' }]}>
-            <Text style={styles.tagText}>{item.type}</Text>
+  }, [filterPets, pets, searchQuery, selectedType]);
+
+  const renderPetItem = useCallback(({ item }) => {
+    const imageUri =
+      item.images && item.images.length > 0
+        ? ImagesService.getImageUri(item.images[0].id)
+        : null;
+
+    return (
+      <TouchableOpacity
+        style={styles.petCard}
+        onPress={() => navigation.navigate('PetDetail', { pet: item })}
+      >
+        <Image
+          source={imageUri ? { uri: imageUri } : require('../assets/pet-placeholder.png')}
+          style={styles.petImage}
+          resizeMode="cover"
+        />
+
+        <View style={styles.petInfo}>
+          <Text style={styles.petName}>{item.name}</Text>
+          <View style={styles.petDetails}>
+            <Text style={styles.petBreed}>{item.breed}</Text>
+            {item.location != null && (
+              <View style={styles.locationContainer}>
+                <Ionicons name="location" size={12} color="#666" />
+                <Text style={styles.locationText}>{item.location.city}</Text>
+              </View>
+            )}
           </View>
-          
-          {item.gender && (
-            <View style={[styles.tag, { backgroundColor: '#F5F0FF' }]}>
-              <Text style={styles.tagText}>{item.gender}</Text>
+
+          <View style={styles.tagsContainer}>
+            <View style={[styles.tag, { backgroundColor: item.type === 'DOG' ? '#E1F5E9' : '#E7F3FF' }]}>
+              <Text style={styles.tagText}>{item.type}</Text>
             </View>
-          )}
-          
-          {item.vaccinated && (
-            <View style={[styles.tag, { backgroundColor: '#FFF3E0' }]}>
-              <Text style={styles.tagText}>Vaccinated</Text>
-            </View>
-          )}
+
+            {item.gender != null && (
+              <View style={[styles.tag, { backgroundColor: '#F5F0FF' }]}>
+                <Text style={styles.tagText}>{item.gender}</Text>
+              </View>
+            )}
+
+            {item.vaccinated === true && (
+              <View style={[styles.tag, { backgroundColor: '#FFF3E0' }]}>
+                <Text style={styles.tagText}>Vaccinated</Text>
+              </View>
+            )}
+          </View>
         </View>
-      </View>
-    </TouchableOpacity>
-  );
-  
-  const FilterButton = ({ label, isActive, onPress }) => (
-    <TouchableOpacity
-      style={[styles.filterButton, isActive && styles.activeFilterButton]}
-      onPress={onPress}
-    >
-      <Text style={[styles.filterButtonText, isActive && styles.activeFilterButtonText]}>
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
-  
+      </TouchableOpacity>
+    );
+  }, [navigation]);
+
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Search Pets</Text>
       </View>
-      
+
       <View style={styles.searchContainer}>
         <View style={styles.searchInputContainer}>
           <Ionicons name="search" size={20} color="#999" />
@@ -175,18 +175,15 @@ const SearchScreen = ({ navigation }) => {
             </TouchableOpacity>
           )}
         </View>
-        
-        <TouchableOpacity
-          style={styles.searchButton}
-          onPress={handleSearch}
-        >
+
+        <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
           <Text style={styles.searchButtonText}>Search</Text>
         </TouchableOpacity>
       </View>
-      
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false} 
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
         style={styles.filtersRow}
         contentContainerStyle={styles.filtersContent}
       >
@@ -205,9 +202,9 @@ const SearchScreen = ({ navigation }) => {
           isActive={selectedType === 'CAT'}
           onPress={() => handleTypeFilter('CAT')}
         />
-        
+
         <View style={styles.filterDivider} />
-        
+
         <FilterButton
           label="Available"
           isActive={selectedStatus === 'AVAILABLE'}
@@ -224,16 +221,11 @@ const SearchScreen = ({ navigation }) => {
           onPress={() => handleStatusFilter('ADOPTED')}
         />
       </ScrollView>
-      
+
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#FF6B6B" />
           <Text style={styles.loadingText}>Loading pets...</Text>
-        </View>
-      ) : searching ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#FF6B6B" />
-          <Text style={styles.loadingText}>Searching...</Text>
         </View>
       ) : filteredPets.length === 0 ? (
         <View style={styles.emptyResultContainer}>
@@ -252,7 +244,7 @@ const SearchScreen = ({ navigation }) => {
           showsVerticalScrollIndicator={false}
         />
       )}
-    </View>
+    </SafeAreaView>
   );
 };
 

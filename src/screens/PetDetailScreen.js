@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,22 +11,55 @@ import {
   Alert,
   Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 //import MapView, { Marker } from 'react-native-maps';
 import PetService from '../services/PetService';
+import ImagesService from '../services/ImagesService';
 import { AuthContext } from '../context/AuthContext';
 
 const { width } = Dimensions.get('window');
 
+// Pure helper — defined outside component so it is never re-created on renders.
+const calculateAge = (birthDate) => {
+  const today = new Date();
+  const birth = new Date(birthDate);
+
+  let years = today.getFullYear() - birth.getFullYear();
+  const months = today.getMonth() - birth.getMonth();
+
+  if (months < 0 || (months === 0 && today.getDate() < birth.getDate())) {
+    years--;
+  }
+
+  if (years === 0) {
+    const monthsDiff = (today.getMonth() + 12) - birth.getMonth();
+    return `${monthsDiff} months`;
+  }
+
+  return `${years} ${years === 1 ? 'year' : 'years'}`;
+};
+
 const PetDetailScreen = ({ route, navigation }) => {
   const { pet: initialPetData } = route.params;
   const { logout } = useContext(AuthContext);
-  
+
   const [pet, setPet] = useState(initialPetData);
   const [loading, setLoading] = useState(true);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isFavorite, setIsFavorite] = useState(false);
   
+  const handleLogout = useCallback(() => {
+    Alert.alert(
+      "Logout",
+      "Are you sure you want to logout?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Logout", onPress: () => logout() },
+      ]
+    );
+  }, [logout]);
+
   useEffect(() => {
     // Set up navigation header with logout button
     navigation.setOptions({
@@ -39,7 +72,7 @@ const PetDetailScreen = ({ route, navigation }) => {
         </TouchableOpacity>
       ),
     });
-    
+
     // Fetch complete pet details
     const fetchPetDetails = async () => {
       try {
@@ -52,104 +85,51 @@ const PetDetailScreen = ({ route, navigation }) => {
         setLoading(false);
       }
     };
-    
+
     fetchPetDetails();
-    
-    // Check if pet is in favorites
-    // This would be implemented with a FavoriteService
-    // setIsFavorite(FavoriteService.isPetFavorite(initialPetData.id));
-  }, [initialPetData.id]);
-  
-  const handleAdoptRequest = () => {
+  }, [initialPetData.id, navigation, handleLogout]);
+
+  const handleAdoptRequest = useCallback(() => {
     Alert.alert(
       "Request Adoption",
       `Would you like to contact ${pet.tutor.name} about adopting ${pet.name}?`,
       [
+        { text: "Cancel", style: "cancel" },
         {
-          text: "Cancel",
-          style: "cancel"
-        },
-        { 
-          text: "Yes", 
+          text: "Yes",
           onPress: () => {
-            // In a real app, this would send a request to the tutor
-            // or open a chat between the user and the tutor
             Alert.alert(
               "Adoption Request Sent",
               `Your interest in adopting ${pet.name} has been sent to ${pet.tutor.name}. They will contact you soon!`
             );
-          }
-        }
+          },
+        },
       ]
     );
-  };
-  
-  const handleToggleFavorite = () => {
-    // Toggle favorite status
-    setIsFavorite(!isFavorite);
-    
-    // In a real app, this would call a FavoriteService
-    // if (isFavorite) {
-    //   FavoriteService.removeFavorite(pet.id);
-    // } else {
-    //   FavoriteService.addFavorite(pet.id);
-    // }
-  };
-  
-  const handleContactTutor = () => {
-    // In a real app, this would open a chat with the tutor
-    // or prompt to call/email the tutor
+  }, [pet]);
+
+  const handleToggleFavorite = useCallback(() => {
+    setIsFavorite(prev => !prev);
+  }, []);
+
+  const handleContactTutor = useCallback(() => {
     if (pet.tutor && pet.tutor.email) {
       Linking.openURL(`mailto:${pet.tutor.email}?subject=Regarding ${pet.name} on PetFinder`);
     } else {
       Alert.alert("Contact Information", "Tutor contact information is not available.");
     }
-  };
-
-  const handleLogout = () => {
-    Alert.alert(
-      "Logout",
-      "Are you sure you want to logout?",
-      [
-        {
-          text: "Cancel",
-          style: "cancel"
-        },
-        { 
-          text: "Logout", 
-          onPress: () => logout() 
-        }
-      ]
-    );
-  };
+  }, [pet]);
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <SafeAreaView style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#FF6B6B" />
         <Text style={styles.loadingText}>Loading pet details...</Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
-  const calculateAge = (birthDate) => {
-    const today = new Date();
-    const birth = new Date(birthDate);
-    
-    let years = today.getFullYear() - birth.getFullYear();
-    const months = today.getMonth() - birth.getMonth();
-    
-    if (months < 0 || (months === 0 && today.getDate() < birth.getDate())) {
-      years--;
-    }
-    
-    if (years === 0) {
-      const monthsDiff = (today.getMonth() + 12) - birth.getMonth();
-      return `${monthsDiff} months`;
-    }
-    
-    return `${years} ${years === 1 ? 'year' : 'years'}`;
-  };
+  // calculateAge is defined at module level above this component
 
   return (
     <ScrollView style={styles.container}>
@@ -157,7 +137,7 @@ const PetDetailScreen = ({ route, navigation }) => {
         {pet.images && pet.images.length > 0 ? (
           <>
             <Image
-              source={{ uri: `http://192.168.0.139:8080/api/pets/images/${pet.images[currentImageIndex].id}` }}
+              source={{ uri: ImagesService.getImageUri(pet.images[currentImageIndex].id) }}
               style={styles.image}
               resizeMode="cover"
             />

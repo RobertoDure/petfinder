@@ -1,14 +1,16 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   ScrollView,
   Switch,
   Alert,
   Image,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { AuthContext } from '../context/AuthContext';
 
@@ -16,46 +18,36 @@ const ProfileScreen = ({ navigation }) => {
   const { userInfo, logout } = useContext(AuthContext);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [darkModeEnabled, setDarkModeEnabled] = useState(false);
-  
-  const handleLogout = () => {
+
+  const handleLogout = useCallback(() => {
     Alert.alert(
       "Logout",
       "Are you sure you want to logout?",
       [
-        {
-          text: "Cancel",
-          style: "cancel"
-        },
-        { 
-          text: "Logout", 
-          onPress: () => logout() 
-        }
+        { text: "Cancel", style: "cancel" },
+        { text: "Logout", onPress: () => logout() },
       ]
     );
-  };
-  
-  const handleBecomeTutor = () => {
+  }, [logout]);
+
+  const handleBecomeTutor = useCallback(() => {
     Alert.alert(
       "Become a Tutor",
       "Would you like to register as a pet tutor to post pets for adoption?",
       [
+        { text: "Cancel", style: "cancel" },
         {
-          text: "Cancel",
-          style: "cancel"
-        },
-        { 
-          text: "Continue", 
+          text: "Continue",
           onPress: () => {
-            // Navigate to tutor registration screen
-            // In a real app, this would be implemented
             Alert.alert("Coming Soon", "This feature is coming soon!");
-          } 
-        }
+          },
+        },
       ]
     );
-  };
-  
+  }, []);
+
   return (
+    <SafeAreaView style={styles.safeArea}>
     <ScrollView style={styles.container}>
       <View style={styles.header}>
         <View style={styles.profileImageContainer}>
@@ -78,31 +70,31 @@ const ProfileScreen = ({ navigation }) => {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Account</Text>
         
-        <TouchableOpacity style={styles.menuItem}>
+        <Pressable style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}>
           <Ionicons name="person-circle-outline" size={22} color="#666" />
           <Text style={styles.menuText}>Personal Information</Text>
           <Ionicons name="chevron-forward" size={22} color="#CCC" />
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.menuItem} onPress={handleBecomeTutor}>
+        </Pressable>
+
+        <Pressable style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]} onPress={handleBecomeTutor}>
           <Ionicons name="paw-outline" size={22} color="#666" />
           <Text style={styles.menuText}>Become a Tutor</Text>
           <Ionicons name="chevron-forward" size={22} color="#CCC" />
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.menuItem}>
+        </Pressable>
+
+        <Pressable style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}>
           <Ionicons name="heart-outline" size={22} color="#666" />
           <Text style={styles.menuText}>Favorite Pets</Text>
           <Ionicons name="chevron-forward" size={22} color="#CCC" />
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.menuItem}>
+        </Pressable>
+
+        <Pressable style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}>
           <Ionicons name="chatbubble-outline" size={22} color="#666" />
           <Text style={styles.menuText}>Messages</Text>
           <View style={styles.badge}>
             <Text style={styles.badgeText}>3</Text>
           </View>
-        </TouchableOpacity>
+        </Pressable>
       </View>
       
       <View style={styles.section}>
@@ -130,52 +122,57 @@ const ProfileScreen = ({ navigation }) => {
           />
         </View>
         
-        <TouchableOpacity style={styles.menuItem}>
+        <Pressable style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}>
           <Ionicons name="language-outline" size={22} color="#666" />
           <Text style={styles.menuText}>Language</Text>
           <View style={styles.valueContainer}>
             <Text style={styles.valueText}>English</Text>
             <Ionicons name="chevron-forward" size={22} color="#CCC" />
           </View>
-        </TouchableOpacity>
+        </Pressable>
       </View>
-      
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Support</Text>
-        
-        <TouchableOpacity style={styles.menuItem}>
+
+        <Pressable style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}>
           <Ionicons name="help-circle-outline" size={22} color="#666" />
           <Text style={styles.menuText}>Help & Support</Text>
           <Ionicons name="chevron-forward" size={22} color="#CCC" />
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.menuItem}>
+        </Pressable>
+
+        <Pressable style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}>
           <Ionicons name="document-text-outline" size={22} color="#666" />
           <Text style={styles.menuText}>Terms & Privacy Policy</Text>
           <Ionicons name="chevron-forward" size={22} color="#CCC" />
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.menuItem}>
+        </Pressable>
+
+        <Pressable style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}>
           <Ionicons name="information-circle-outline" size={22} color="#666" />
           <Text style={styles.menuText}>About PetFinder</Text>
           <Ionicons name="chevron-forward" size={22} color="#CCC" />
-        </TouchableOpacity>
+        </Pressable>
       </View>
-      
-      <TouchableOpacity 
-        style={styles.logoutButton}
+
+      <Pressable
+        style={({ pressed }) => [styles.logoutButton, pressed && styles.logoutButtonPressed]}
         onPress={handleLogout}
       >
         <Ionicons name="log-out-outline" size={22} color="#FF6B6B" />
         <Text style={styles.logoutText}>Logout</Text>
-      </TouchableOpacity>
-      
+      </Pressable>
+
       <Text style={styles.versionText}>Version 1.0.0</Text>
     </ScrollView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#F5F8FF',
+  },
   container: {
     flex: 1,
     backgroundColor: '#F5F8FF',
@@ -253,6 +250,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
   },
+  menuItemPressed: {
+    backgroundColor: '#F5F5F5',
+  },
   menuText: {
     flex: 1,
     fontSize: 16,
@@ -289,6 +289,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     marginTop: 15,
     paddingVertical: 15,
+  },
+  logoutButtonPressed: {
+    backgroundColor: '#FFF0F0',
   },
   logoutText: {
     fontSize: 16,

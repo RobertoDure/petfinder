@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,16 +9,19 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import FavoritesService from '../services/FavoritesService';
 import ImagesService from '../services/ImagesService';
+import FavoritesDebugger from '../utils/FavoritesDebugger';
 
 const FavoritesScreen = ({ navigation }) => {
   const [favorites, setFavorites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-    const loadFavorites = async () => {
+
+  const loadFavorites = useCallback(async () => {
     try {
       setLoading(true);
       const favoritePets = await FavoritesService.getFavorites();
@@ -28,22 +31,22 @@ const FavoritesScreen = ({ navigation }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const onRefresh = async () => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadFavorites();
     setRefreshing(false);
-  };
+  }, [loadFavorites]);
 
   // Load favorites when screen comes into focus
   useFocusEffect(
     useCallback(() => {
       loadFavorites();
-    }, [])
+    }, [loadFavorites])
   );
   
-  const handleRemoveFavorite = async (petId) => {
+  const handleRemoveFavorite = useCallback(async (petId) => {
     try {
       const success = await FavoritesService.removeFavorite(petId);
       if (success) {
@@ -53,14 +56,13 @@ const FavoritesScreen = ({ navigation }) => {
     } catch (error) {
       console.error('Error removing favorite:', error);
     }
-  };
-    const renderPetItem = ({ item }) => {
-    const getImageUrl = () => {
-      if (item.images && item.images.length > 0) {
-        return ImagesService.getImageUri(item.images[0].id);
-      }
-      return null;
-    };
+  }, []);
+
+  const renderPetItem = useCallback(({ item }) => {
+    const imageUri =
+      item.images && item.images.length > 0
+        ? ImagesService.getImageUri(item.images[0].id)
+        : null;
 
     return (
       <TouchableOpacity
@@ -68,17 +70,17 @@ const FavoritesScreen = ({ navigation }) => {
         onPress={() => navigation.navigate('PetDetail', { pet: item })}
       >
         <Image
-          source={getImageUrl() ? { uri: getImageUrl() } : require('../assets/pet1.jpg')}
+          source={imageUri ? { uri: imageUri } : require('../assets/pet1.jpg')}
           style={styles.petImage}
           resizeMode="cover"
         />
-        
+
         {item.status === 'PENDING' && (
           <View style={styles.statusBadge}>
             <Text style={styles.statusText}>Pending</Text>
           </View>
         )}
-        
+
         <View style={styles.petInfo}>
           <View>
             <Text style={styles.petName}>{item.name}</Text>
@@ -90,7 +92,7 @@ const FavoritesScreen = ({ navigation }) => {
               </Text>
             </View>
           </View>
-          
+
           <TouchableOpacity
             style={styles.removeButton}
             onPress={() => handleRemoveFavorite(item.id)}
@@ -100,18 +102,19 @@ const FavoritesScreen = ({ navigation }) => {
         </View>
       </TouchableOpacity>
     );
-  };
+  }, [navigation, handleRemoveFavorite]);
   
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#FF6B6B" />
+      <SafeAreaView style={styles.container}>
+        <ActivityIndicator size="large" color="#FF6B6B" style={styles.loadingIndicator} />
         <Text style={styles.loadingText}>Loading favorites...</Text>
-      </View>
+      </SafeAreaView>
     );
   }
-    return (
-    <View style={styles.container}>
+
+  return (
+    <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <View style={styles.titleContainer}>
           <Text style={styles.title}>Your Favorites</Text>
@@ -158,7 +161,7 @@ const FavoritesScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
       )}
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -167,16 +170,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F8FF',
   },
-  loadingContainer: {
+  loadingIndicator: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    alignSelf: 'center',
   },
   loadingText: {
     marginTop: 10,
     color: '#666',
     fontSize: 16,
-  },  header: {
+    textAlign: 'center',
+  },
+  header: {
     padding: 20,
     paddingBottom: 10,
     flexDirection: 'row',

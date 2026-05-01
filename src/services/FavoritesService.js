@@ -88,6 +88,41 @@ const FavoritesService = {
       
       return response.data;
     } catch (error) {
+      // If the API says certain pet IDs no longer exist, purge them and retry
+      if (
+        error.response?.status === 404 &&
+        Array.isArray(error.response?.data?.value) &&
+        error.response.data.value.length > 0
+      ) {
+        const staleIds = error.response.data.value.map(id => Number(id));
+        console.warn('Removing stale favorite IDs that no longer exist:', staleIds);
+
+        try {
+          const currentIds = await FavoritesService.getFavoriteIds();
+          const cleanedIds = currentIds.filter(id => !staleIds.includes(Number(id)));
+          await AsyncStorage.setItem(FAVORITES_IDS_STORAGE_KEY, JSON.stringify(cleanedIds));
+
+          // Also purge stale entries from the cached pets data
+          const cachedPetsStr = await AsyncStorage.getItem(FAVORITES_PETS_STORAGE_KEY);
+          if (cachedPetsStr) {
+            const cachedPets = JSON.parse(cachedPetsStr);
+            const cleanedPets = cachedPets.filter(pet => !staleIds.includes(Number(pet.id)));
+            await AsyncStorage.setItem(FAVORITES_PETS_STORAGE_KEY, JSON.stringify(cleanedPets));
+          }
+
+          // Retry with the remaining valid IDs
+          if (cleanedIds.length === 0) {
+            return [];
+          }
+          const retryResponse = await apiClient.post('/pets/favorites', { ids: cleanedIds.map(Number) });
+          await AsyncStorage.setItem(FAVORITES_PETS_STORAGE_KEY, JSON.stringify(retryResponse.data));
+          return retryResponse.data;
+        } catch (retryError) {
+          console.error('Error during stale-ID cleanup retry:', retryError);
+          return [];
+        }
+      }
+
       console.error('Error fetching favorites:', error.response ? {
         status: error.response.status,
         data: error.response.data

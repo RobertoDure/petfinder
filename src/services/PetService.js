@@ -52,6 +52,31 @@ const PetService = {
       throw error;
     }
   },
+
+  /**
+   * Fetch a single page of pets with pagination.
+   * Maps to: GET /pets?page={page}&size={size}&sortBy=id&sortDir=ASC
+   * The controller uses PageRequest.of(page, size) directly (0-based).
+   * @param {number} page - 0-based page number
+   * @param {number} size - items per page (default 10)
+   * @returns {Promise<{content: Array, totalPages: number, last: boolean, page: number, size: number, totalElements: number}>}
+   */
+  getPetsPaginated: async (page = 0, size = 10) => {
+    try {
+      const response = await apiClient.get('/pets', {
+        params: { page, size, sortBy: 'id', sortDir: 'ASC' },
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching paginated pets:', error);
+      throw error;
+    }
+  },
+
+  /** @deprecated use getPetsPaginated */
+  getPetsByStatusPaginated: async (_status, page = 0, size = 10) => {
+    return PetService.getPetsPaginated(page, size);
+  },
   
   getPetsByCity: async (city) => {
     try {

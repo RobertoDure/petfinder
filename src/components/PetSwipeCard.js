@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, Image, Dimensions, TouchableOpacity, Platform, ActivityIndicator } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -10,7 +10,7 @@ import Animated, {
   Extrapolation,
   useDerivedValue
 } from 'react-native-reanimated';
-import { scheduleOnRN } from 'react-native-worklets';
+import { runOnJS } from 'react-native-worklets';
 import { Ionicons } from '@expo/vector-icons';
 import FavoritesService from '../services/FavoritesService';
 import ImagesService from '../services/ImagesService';
@@ -20,23 +20,32 @@ const SWIPE_THRESHOLD = width * 0.25;
 const CARD_WIDTH = width * 0.9;
 const CARD_HEIGHT = height * 0.7;
 
-const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
+const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress, onNeedMore, isFetchingMore }) => {
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [favoritedPets, setFavoritedPets] = useState(new Set());
   const [swipeLoading, setSwipeLoading] = useState(false);
   const [preloadedImages, setPreloadedImages] = useState(new Map());
-  const [isPreloading, setIsPreloading] = useState(false);
+  // Use a ref instead of state so the guard flag doesn't trigger extra renders.
+  const isPreloadingRef = useRef(false);
 
   // Constants for preloading
   const CARDS_TO_PRELOAD = 5;
   const CARDS_TO_SHOW_BEHIND = 3;
 
-  // Animated values for gestures
+  // Animated values for the front (draggable) card
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const scale = useSharedValue(1);
   const rotate = useSharedValue(0);
+
+  // Animated values for the exit card (flies off after index is already advanced)
+  const exitTranslateX = useSharedValue(0);
+  const exitTranslateY = useSharedValue(0);
+  const exitRotate = useSharedValue(0);
+
+  // The pet card currently flying off screen
+  const [exitingCard, setExitingCard] = useState(null);
   // Load favorited pets when component mounts or pets change.
   // preloadImages is intentionally NOT called here; the [currentCardIndex] effect handles it.
   useEffect(() => {
@@ -66,15 +75,12 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
   };
   // Preload images for next cards
   const preloadImages = async () => {
-    if (isPreloading || pets.length === 0) return;
+    if (isPreloadingRef.current || pets.length === 0) return;
 
-    setIsPreloading(true);
+    isPreloadingRef.current = true;
     const newPreloadedImages = new Map();
 
     try {
-      // Clean up old images that are no longer needed
-      const currentImageKeys = new Set();
-
       // Preload current card and next CARDS_TO_PRELOAD cards
       const startIndex = Math.max(0, currentCardIndex - 1); // Keep one previous card
       const endIndex = Math.min(currentCardIndex + CARDS_TO_PRELOAD, pets.length);
@@ -86,7 +92,6 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
         // Preload all images for this pet
         for (const imageData of pet.images) {
           const imageKey = `${pet.id}-${imageData.id}`;
-          currentImageKeys.add(imageKey);
 
           // Keep existing preloaded image if available
           if (preloadedImages.has(imageKey)) {
@@ -94,16 +99,11 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
           } else {
             const imageUri = ImagesService.getImageUri(imageData.id);
 
-            newPreloadedImages.set(imageKey, {
-              uri: imageUri,
-              loaded: false});
+            newPreloadedImages.set(imageKey, { uri: imageUri, loaded: false });
             Image.prefetch(imageUri)
               .then(() => {
                 if (newPreloadedImages.has(imageKey)) {
-                  newPreloadedImages.set(imageKey, {
-                    uri: imageUri,
-                    loaded: true
-                  });
+                  newPreloadedImages.set(imageKey, { uri: imageUri, loaded: true });
                   setPreloadedImages(new Map(newPreloadedImages));
                 }
               })
@@ -118,10 +118,11 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
     } catch (error) {
       console.error('Error preloading images:', error);
     } finally {
-      setIsPreloading(false);
+      isPreloadingRef.current = false;
     }
-  };// Get preloaded image URI or fallback
-  const getImageSource = (pet, imageIndex = 0) => {
+  };
+
+  const getImageSource = useCallback((pet, imageIndex = 0) => {
     if (!pet.images || pet.images.length === 0) {
       return require('../assets/pet1.jpg');
     }
@@ -136,7 +137,7 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
 
     // Fallback to direct URI if not preloaded
     return { uri: ImagesService.getImageUri(imageData.id) };
-  };
+  }, [preloadedImages]);
 
   // Function to handle image cycling within a card
   const cycleImages = (pet, direction) => {
@@ -153,21 +154,39 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
     }
   };
 
-  // Handle card swiped
-  const handleCardSwiped = (direction) => {
-    const pet = pets[currentCardIndex];
+  // Clears the exit card once its fly-away animation finishes.
+  const clearExitingCard = useCallback(() => {
+    setExitingCard(null);
+    exitTranslateX.value = 0;
+    exitTranslateY.value = 0;
+    exitRotate.value = 0;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Called immediately when a swipe is committed (before the exit animation ends).
+  // cardIndex is passed explicitly to avoid stale closure issues from worklets.
+  const commitSwipe = useCallback((direction, cardIndex) => {
+    const pet = pets[cardIndex];
     if (!pet) return;
+
+    // Show this pet as the exit card (flying away on top)
+    setExitingCard(pet);
+
+    const nextIndex = cardIndex + 1;
+    setCurrentCardIndex(nextIndex);
+    setCurrentImageIndex(0);
 
     if (direction === 'left') {
       if (onSwipeLeft) onSwipeLeft(pet);
-    } else if (direction === 'right') {
+    } else {
       handleSwipeRight(pet);
     }
 
-    // Move to next card
-    setCurrentCardIndex(prev => prev + 1);
-    setCurrentImageIndex(0);
-  };
+    if (onNeedMore && pets.length - nextIndex <= 3) {
+      onNeedMore();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pets, onSwipeLeft, onNeedMore]);
 
   // Enhanced swipe handlers with AsyncStorage integration
   const handleSwipeRight = async (pet) => {
@@ -191,16 +210,24 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
 
   // Programmatic swipe functions
   const swipeLeft = () => {
-    translateX.value = withSpring(-width * 1.5, { damping: 15 }, () => {
-      scheduleOnRN(handleCardSwiped, 'left');
-      translateX.value = 0;
+    const idx = currentCardIndex;
+    exitTranslateX.value = 0;
+    exitTranslateY.value = 0;
+    exitRotate.value = -8;
+    commitSwipe('left', idx);
+    exitTranslateX.value = withSpring(-width * 1.5, { damping: 15 }, () => {
+      runOnJS(clearExitingCard)();
     });
   };
 
   const swipeRight = () => {
-    translateX.value = withSpring(width * 1.5, { damping: 15 }, () => {
-      scheduleOnRN(handleCardSwiped, 'right');
-      translateX.value = 0;
+    const idx = currentCardIndex;
+    exitTranslateX.value = 0;
+    exitTranslateY.value = 0;
+    exitRotate.value = 8;
+    commitSwipe('right', idx);
+    exitTranslateX.value = withSpring(width * 1.5, { damping: 15 }, () => {
+      runOnJS(clearExitingCard)();
     });
   };
 
@@ -230,21 +257,28 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
       const shouldSwipeLeft = event.translationX < -SWIPE_THRESHOLD;
       const shouldSwipeRight = event.translationX > SWIPE_THRESHOLD;
 
-      if (shouldSwipeLeft) {
-        translateX.value = withSpring(-width * 1.5, { damping: 15 }, () => {
-          scheduleOnRN(handleCardSwiped, 'left');
-          translateX.value = 0;
-          translateY.value = 0;
-          rotate.value = 0;
-          scale.value = 1;
-        });
-      } else if (shouldSwipeRight) {
-        translateX.value = withSpring(width * 1.5, { damping: 15 }, () => {
-          scheduleOnRN(handleCardSwiped, 'right');
-          translateX.value = 0;
-          translateY.value = 0;
-          rotate.value = 0;
-          scale.value = 1;
+      if (shouldSwipeLeft || shouldSwipeRight) {
+        const direction = shouldSwipeLeft ? 'left' : 'right';
+        const targetX = shouldSwipeLeft ? -width * 1.5 : width * 1.5;
+
+        // Capture the current drag position so the exit card starts exactly
+        // where the user's finger released — no jump.
+        exitTranslateX.value = translateX.value;
+        exitTranslateY.value = translateY.value;
+        exitRotate.value = rotate.value;
+
+        // Reset the front card immediately — new card snaps in behind the exit card
+        translateX.value = 0;
+        translateY.value = 0;
+        rotate.value = 0;
+        scale.value = 1;
+
+        // Advance the deck index on the JS thread right now (not after animation)
+        runOnJS(commitSwipe)(direction, currentCardIndex);
+
+        // Fly the captured exit card off screen
+        exitTranslateX.value = withSpring(targetX, { damping: 15 }, () => {
+          runOnJS(clearExitingCard)();
         });
       } else {
         // Return to center
@@ -286,7 +320,64 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
       Extrapolation.CLAMP
     );
     return { opacity };
-  }); 
+  });
+
+  // Exit card animated style
+  const exitAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: exitTranslateX.value },
+      { translateY: exitTranslateY.value },
+      { rotate: `${exitRotate.value}deg` },
+    ],
+  }));
+
+  // Background card animated styles.
+  // Uses the maximum of drag (translateX) and exit (exitTranslateX) progress
+  // so cards keep lifting whether the user is dragging OR the exit animation is running.
+  const bgCardStyle0 = useAnimatedStyle(() => {
+    const progress = interpolate(
+      Math.abs(translateX.value) + Math.abs(exitTranslateX.value),
+      [0, SWIPE_THRESHOLD], [0, 1], Extrapolation.CLAMP
+    );
+    return {
+      transform: [
+        { scale: interpolate(progress, [0, 1], [0.97, 1.0]) },
+        { translateY: interpolate(progress, [0, 1], [8, 0]) },
+      ],
+      opacity: 1.0,
+    };
+  });
+
+  const bgCardStyle1 = useAnimatedStyle(() => {
+    const progress = interpolate(
+      Math.abs(translateX.value) + Math.abs(exitTranslateX.value),
+      [0, SWIPE_THRESHOLD], [0, 1], Extrapolation.CLAMP
+    );
+    return {
+      transform: [
+        { scale: interpolate(progress, [0, 1], [0.94, 0.97]) },
+        { translateY: interpolate(progress, [0, 1], [16, 8]) },
+      ],
+      opacity: interpolate(progress, [0, 1], [0.8, 1.0]),
+    };
+  });
+
+  const bgCardStyle2 = useAnimatedStyle(() => {
+    const progress = interpolate(
+      Math.abs(translateX.value) + Math.abs(exitTranslateX.value),
+      [0, SWIPE_THRESHOLD], [0, 1], Extrapolation.CLAMP
+    );
+    return {
+      transform: [
+        { scale: interpolate(progress, [0, 1], [0.91, 0.94]) },
+        { translateY: interpolate(progress, [0, 1], [24, 16]) },
+      ],
+      opacity: interpolate(progress, [0, 1], [0.6, 0.8]),
+    };
+  });
+
+  const bgAnimatedStyles = [bgCardStyle0, bgCardStyle1, bgCardStyle2];
+
   
   const renderCard = (pet, index, isBackground = false) => {
     if (!pet) return null;
@@ -415,38 +506,54 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
     <View style={styles.container}>
       <View style={styles.cardContainer}>
         {pets.length > 0 ? (          <>
-            {/* Stack effect - show background cards with proper preloading */}
-            {pets.slice(currentCardIndex + 1, currentCardIndex + 1 + CARDS_TO_SHOW_BEHIND).map((pet, index) => {
-                const backgroundCardStyle = {
-                  transform: [
-                    { scale: 1 - (index + 1) * 0.03 },
-                    { translateY: (index + 1) * 8 }
-                  ],
-                  zIndex: -(index + 1),
-                  opacity: 1 - (index * 0.2)
-                };
-                
-                return (
-                  <View
-                    key={`background-${pet.id}-${currentCardIndex}-${index}`}
-                    style={[styles.card, styles.backgroundCard, backgroundCardStyle]}
-                  >                  
-                    <View style={styles.imageContainer}>
-                      <Image
-                        source={getImageSource(pet, 0)}
-                        style={styles.cardImage}
-                        defaultSource={require('../assets/pet1.jpg')}
-                        fadeDuration={100}
-                      />
-                    </View>
-                    <View style={styles.cardContent}>
-                      <View style={styles.header}>
-                        <Text style={styles.name}>{pet.name}</Text>
-                      </View>
+            {/* Exit card — the pet that just got swiped, flying off above the stack */}
+            {exitingCard && (
+              <Animated.View
+                style={[styles.card, exitAnimatedStyle, styles.exitCard]}
+                pointerEvents="none"
+              >
+                <View style={styles.imageContainer}>
+                  <Image
+                    source={getImageSource(exitingCard, 0)}
+                    style={styles.cardImage}
+                    defaultSource={require('../assets/pet1.jpg')}
+                    fadeDuration={0}
+                  />
+                </View>
+                <View style={styles.cardContent}>
+                  <View style={styles.header}>
+                    <Text style={styles.name}>{exitingCard.name}</Text>
+                  </View>
+                </View>
+              </Animated.View>
+            )}
+
+            {/* Stack — background cards animate toward the top as the front card is dragged */}
+            {pets.slice(currentCardIndex + 1, currentCardIndex + 1 + CARDS_TO_SHOW_BEHIND).map((pet, index) => (
+                <Animated.View
+                  key={`background-${pet.id}-${currentCardIndex}-${index}`}
+                  style={[
+                    styles.card,
+                    styles.backgroundCard,
+                    { zIndex: -(index + 1) },
+                    bgAnimatedStyles[index],
+                  ]}
+                >
+                  <View style={styles.imageContainer}>
+                    <Image
+                      source={getImageSource(pet, 0)}
+                      style={styles.cardImage}
+                      defaultSource={require('../assets/pet1.jpg')}
+                      fadeDuration={100}
+                    />
+                  </View>
+                  <View style={styles.cardContent}>
+                    <View style={styles.header}>
+                      <Text style={styles.name}>{pet.name}</Text>
                     </View>
                   </View>
-                );
-              })
+                </Animated.View>
+              ))
             }
             {/* Current card */}
             {pets[currentCardIndex] && renderCard(pets[currentCardIndex], currentCardIndex, false)}
@@ -468,6 +575,13 @@ const PetSwipeCard = ({ pets, onSwipeLeft, onSwipeRight, onCardPress }) => {
                 <Ionicons name="heart" size={30} color="#4CCC93" />
               </TouchableOpacity>
             </View> */}
+          {/* Subtle indicator shown while the next batch is being fetched */}
+            {isFetchingMore && (
+              <View style={styles.fetchingMoreIndicator}>
+                <ActivityIndicator size="small" color="#FF6B6B" />
+                <Text style={styles.fetchingMoreText}>Loading more pets…</Text>
+              </View>
+            )}
           </>
         ) : (
           <View style={styles.emptyContainer}>
@@ -526,8 +640,10 @@ const styles = StyleSheet.create({
     elevation: 5,
     overflow: 'hidden',
     position: 'absolute',
-  }, backgroundCard: {
-    opacity: 0.9,
+  },
+  backgroundCard: {},
+  exitCard: {
+    zIndex: 100,
   },
   cardTouchable: {
     flex: 1,
@@ -743,6 +859,17 @@ const styles = StyleSheet.create({
     color: '#AAAAAA',
     marginTop: 10,
     textAlign: 'center',
+  },
+  fetchingMoreIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    gap: 6,
+  },
+  fetchingMoreText: {
+    fontSize: 13,
+    color: '#FF6B6B',
   },
 });
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,82 +15,144 @@ import FavoritesService from '../services/FavoritesService';
 import PetSwipeCard from '../components/PetSwipeCard';
 import { Ionicons } from '@expo/vector-icons';
 
+// Extracted outside component: prevents React from treating it as a new
+// component type on every render, which would cause unnecessary unmounts.
+const FilterButton = ({ label, isActive, onPress }) => (
+  <TouchableOpacity
+    style={[styles.filterButton, isActive && styles.activeFilterButton]}
+    onPress={onPress}
+  >
+    <Text style={[styles.filterButtonText, isActive && styles.activeFilterButtonText]}>
+      {label}
+    </Text>
+  </TouchableOpacity>
+);
+
 const HomeScreen = ({ navigation }) => {
   const { userInfo } = useContext(AuthContext);
-  
-  const [pets, setPets] = useState([]);
-  const [loading, setLoading] = useState(true);
+
+  // ── Pagination state ──────────────────────────────────────────────────────
+  const [petsQueue, setPetsQueue] = useState([]);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [error, setError] = useState(null);
+  // Increment to remount PetSwipeCard and reset its internal index on filter change
+  const [swipeKey, setSwipeKey] = useState(0);
+
+  // Refs for mutable values accessed inside async callbacks (avoids stale closures)
+  const currentPageRef = useRef(0);
+  const isFetchingRef = useRef(false);
+  const hasMoreRef = useRef(true);
+  const filtersRef = useRef(null);
+
+  // ── Filter state ──────────────────────────────────────────────────────────
   const [filterModalVisible, setFilterModalVisible] = useState(false);
-  
-  // Filter state
   const [filters, setFilters] = useState({
-    type: null, // "DOG" or "CAT"
-    gender: null, // "MALE", "FEMALE", "UNKNOWN"
-    vaccinated: null, // true or false
-    neutered: null, // true or false
-    specialNeeds: null, // true or false
+    type: null,
+    gender: null,
+    vaccinated: null,
+    neutered: null,
+    specialNeeds: null,
   });
-  
-  // Load pets on component mount
+
+  // Keep filtersRef in sync with the latest filter state
   useEffect(() => {
-    fetchPets(filters);
+    filtersRef.current = filters;
+  }, [filters]);
+
+  // ── Client-side filter helper ─────────────────────────────────────────────
+  const applyClientFilters = useCallback((pets, activeFilters) => {
+    if (!activeFilters) return pets;
+    // Always keep only AVAILABLE pets (status filter is not on the paginated endpoint)
+    let filtered = pets.filter(p => p.status === 'AVAILABLE');
+    if (activeFilters.type) filtered = filtered.filter(p => p.type === activeFilters.type);
+    if (activeFilters.gender) filtered = filtered.filter(p => p.gender === activeFilters.gender);
+    if (activeFilters.vaccinated !== null) filtered = filtered.filter(p => p.vaccinated === activeFilters.vaccinated);
+    if (activeFilters.neutered !== null) filtered = filtered.filter(p => p.neutered === activeFilters.neutered);
+    if (activeFilters.specialNeeds !== null) filtered = filtered.filter(p => p.specialNeeds === activeFilters.specialNeeds);
+    return filtered;
   }, []);
 
-  const fetchPets = async (activeFilters = filters) => {
-    setLoading(true);
+  // ── Initial / filter-reset fetch ──────────────────────────────────────────
+  // Resets all pagination state, clears the queue and fetches page 0 fresh.
+  const resetAndFetch = useCallback(async (activeFilters) => {
+    isFetchingRef.current = false; // release any stale lock from previous session
+    currentPageRef.current = 0;
+    hasMoreRef.current = true;
+    filtersRef.current = activeFilters;
+    setPetsQueue([]);
+    setInitialLoading(true);
     setError(null);
+    setSwipeKey(prev => prev + 1); // remount PetSwipeCard → resets currentCardIndex
 
     try {
-      const availablePets = await PetService.getPetsByStatus('AVAILABLE');
-
-      let filteredPets = availablePets;
-
-      if (activeFilters.type) {
-        filteredPets = filteredPets.filter(pet => pet.type === activeFilters.type);
-      }
-      if (activeFilters.gender) {
-        filteredPets = filteredPets.filter(pet => pet.gender === activeFilters.gender);
-      }
-      if (activeFilters.vaccinated !== null) {
-        filteredPets = filteredPets.filter(pet => pet.vaccinated === activeFilters.vaccinated);
-      }
-      if (activeFilters.neutered !== null) {
-        filteredPets = filteredPets.filter(pet => pet.neutered === activeFilters.neutered);
-      }
-      if (activeFilters.specialNeeds !== null) {
-        filteredPets = filteredPets.filter(pet => pet.specialNeeds === activeFilters.specialNeeds);
-      }
-
-      setPets(filteredPets);
-    } catch (err) {
+      const data = await PetService.getPetsPaginated(0, 10);
+      const filtered = applyClientFilters(data.content ?? [], activeFilters);
+      currentPageRef.current = 1;
+      hasMoreRef.current = !data.last;
+      setPetsQueue(filtered);
+    } catch {
       setError('Failed to load pets. Please try again.');
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
     }
-  };
-    const handleSwipeLeft = (_pet) => {
-    // Future: track rejected pets to avoid re-showing them
-  };
+  }, [applyClientFilters]);
 
-  const handleSwipeRight = async (pet) => {
+  // ── Background pre-fetch ──────────────────────────────────────────────────
+  // Called by PetSwipeCard when ≤3 cards remain in the rendered queue.
+  const fetchNextPage = useCallback(async () => {
+    if (isFetchingRef.current || !hasMoreRef.current) return;
+    isFetchingRef.current = true;
+    setIsFetchingMore(true);
+
+    try {
+      const page = currentPageRef.current;
+      const data = await PetService.getPetsPaginated(page, 10);
+      const filtered = applyClientFilters(data.content ?? [], filtersRef.current ?? {});
+      currentPageRef.current = page + 1;
+      hasMoreRef.current = !data.last;
+
+      setPetsQueue(prev => {
+        const existingIds = new Set(prev.map(p => String(p.id)));
+        const newPets = filtered.filter(p => !existingIds.has(String(p.id)));
+        return [...prev, ...newPets];
+      });
+    } catch {
+      // Background fetch failure is silent — existing queued cards remain swipeable
+    } finally {
+      isFetchingRef.current = false;
+      setIsFetchingMore(false);
+    }
+  }, [applyClientFilters]);
+
+  // Initial load on mount
+  useEffect(() => {
+    resetAndFetch(filters);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally run only on mount
+
+  const handleSwipeLeft = useCallback((_pet) => {
+    // Future: track rejected pets to avoid re-showing them
+  }, []);
+
+  const handleSwipeRight = useCallback(async (pet) => {
     try {
       await FavoritesService.addFavorite(pet.id);
     } catch {
       // Swipe failures are silent; the user can still favourite from the detail screen
     }
-  };
-  
-  const handleCardPress = (pet) => {
+  }, []);
+
+  const handleCardPress = useCallback((pet) => {
     navigation.navigate('PetDetail', { pet });
-  };
-  
-  const applyFilters = () => {
+  }, [navigation]);
+
+  const applyFilters = useCallback(() => {
     setFilterModalVisible(false);
-    fetchPets(filters);
-  };
-  
-  const resetFilters = () => {
+    resetAndFetch(filters);
+  }, [resetAndFetch, filters]);
+
+  const resetFilters = useCallback(() => {
     setFilters({
       type: null,
       gender: null,
@@ -98,18 +160,8 @@ const HomeScreen = ({ navigation }) => {
       neutered: null,
       specialNeeds: null,
     });
-  };
-
-  const FilterButton = ({ label, isActive, onPress }) => (
-    <TouchableOpacity
-      style={[styles.filterButton, isActive && styles.activeFilterButton]}
-      onPress={onPress}
-    >
-      <Text style={[styles.filterButtonText, isActive && styles.activeFilterButtonText]}>
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
+    // Only resets local UI state; user clicks Apply to trigger a new fetch
+  }, []);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -133,7 +185,7 @@ const HomeScreen = ({ navigation }) => {
             onPress={() => {
               const empty = { type: null, gender: null, vaccinated: null, neutered: null, specialNeeds: null };
               setFilters(empty);
-              fetchPets(empty);
+              resetAndFetch(empty);
             }}
           >
             <Text style={styles.clearFiltersText}>Clear All</Text>
@@ -141,7 +193,7 @@ const HomeScreen = ({ navigation }) => {
         )}
       </View>
       
-      {loading ? (
+      {initialLoading ? (
         <View style={styles.loaderContainer}>
           <ActivityIndicator size="large" color="#FF6B6B" />
           <Text style={styles.loadingText}>Finding pets...</Text>
@@ -150,19 +202,22 @@ const HomeScreen = ({ navigation }) => {
         <View style={styles.errorContainer}>
           <Ionicons name="alert-circle-outline" size={60} color="#FF6B6B" />
           <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.retryButton}
-            onPress={() => fetchPets(filters)}
+            onPress={() => resetAndFetch(filters)}
           >
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
         </View>
       ) : (
         <PetSwipeCard
-          pets={pets}
+          key={swipeKey}
+          pets={petsQueue}
           onSwipeLeft={handleSwipeLeft}
           onSwipeRight={handleSwipeRight}
           onCardPress={handleCardPress}
+          onNeedMore={fetchNextPage}
+          isFetchingMore={isFetchingMore}
         />
       )}
       
